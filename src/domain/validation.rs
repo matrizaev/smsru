@@ -37,10 +37,7 @@ mod tests {
         let err = ValidationError::Empty { field: "to" };
         assert_eq!(err.to_string(), "to must not be empty");
 
-        let err = ValidationError::TooManyRecipients {
-            max: 2,
-            actual: 3,
-        };
+        let err = ValidationError::TooManyRecipients { max: 2, actual: 3 };
         assert_eq!(err.to_string(), "too many recipients: 3 (max 2)");
 
         let err = ValidationError::InvalidPhoneNumber {
