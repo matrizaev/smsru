@@ -31,6 +31,7 @@ These instructions apply to all files in this repository.
 - Represent alternative request shapes with enums (e.g., one message to many vs per-recipient messages).
 - Validate early at construction time; keep constructors fallible where needed.
 - Keep conversions to/from `String` explicit; avoid “stringly typed” APIs.
+- Opaque values received as `String` in the public API should be wrapped in explicit domain newtypes internally (e.g., `RawPhoneNumber`).
 
 ## Error handling
 

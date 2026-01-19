@@ -18,7 +18,8 @@ This document specifies the intended public API and behavior of the `smsru` Rust
 
 - **URL**: `https://sms.ru/sms/send`
 - **HTTP method**: `POST` (documentation returns code `210` if `GET` is used)
-- **Encoding**: parameters must be UTF-8 (`212` indicates wrong encoding)
+- **Content-Type**: `application/x-www-form-urlencoded`
+- **Encoding**: parameters are UTF-8 (`212` indicates wrong encoding)
 
 ## Authentication
 
@@ -41,13 +42,27 @@ The library must support both variants.
   - Alternate form: pass per-recipient messages via an array-like form: `to[PHONE]=TEXT`.
 - `msg` (required when `to` is not `to[PHONE]=TEXT`): message text in UTF-8.
 
+Clarification:
+
+- When using `to=...` (a phone list), you provide a single shared `msg=...`.
+- When using `to[PHONE]=TEXT` (per-recipient messages), you do not send `msg`; the per-phone values are the messages.
+
 Notes:
 
-- The documentation examples use numbers like `7925...` (no leading `+`). The library should accept either format and transmit exactly what the user provided (except for trimming surrounding whitespace).
+- The documentation examples use numbers like `7925...` (no leading `+`).
+
+Phone-number policy (normative):
+
+- By default, phone numbers are treated as opaque strings and are transmitted as provided (after trimming surrounding whitespace). This is modeled with `RawPhoneNumber`.
+- E.164 normalization is opt-in via `PhoneNumber::parse(default_region, input)` backed by the `phonenumber` crate. `PhoneNumber` can be converted into `RawPhoneNumber` for transport.
+- E.164 normalization must not rely on an implicit region default. If parsing requires a region, it must be an explicit input to the API.
+- Parse/normalization failures:
+  - APIs that accept `PhoneNumber` must fail at construction/validation time.
+  - APIs that accept `RawPhoneNumber` do not perform phone parsing; invalid numbers are rejected by the server via status codes (e.g., `202`, `207`).
 
 ### Optional parameters
 
-- `json=1` (recommended): request JSON response. The library should always send this unless explicitly overridden.
+- `json=1` (recommended): request JSON response. The library always sends this; `JsonMode::Plain` is rejected by the client.
 - `from`: sender name/phone. Must be approved by an administrator; if omitted, default sender is used (per SMS.RU settings).
 - `ip`: end-user IP address (not the server IP). Used for anti-fraud protections when SMS is sent as a user action (e.g., OTP). If many messages are sent with the same `ip`, SMS.RU may block sending (settings exist in the dashboard).
 - `time`: delayed send time as a UNIX timestamp. Must be no more than 2 months in the future; if less than current time, send immediately.
@@ -61,10 +76,12 @@ Notes:
 
 The crate should expose a request type that can represent both “same text to many numbers” and “different texts per number”:
 
-- `SendSms::ToMany { to: Vec<String>, msg: String, ... }`
-- `SendSms::PerRecipient { messages: BTreeMap<String, String>, ... }`
+- `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
+- `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
 
 The client must serialize these into the correct SMS.RU parameter format.
+
+For `PerRecipient`, the map contains at most one message per phone number (unique keys). If constructed from an iterator with duplicate phone keys, later entries overwrite earlier ones (standard map semantics).
 
 ## Response
 
@@ -80,7 +97,18 @@ The API returns JSON with at least:
   - `status_code`: numeric code for that recipient
   - `status_text`: optional textual description
   - `sms_id`: present on success (message identifier)
-- `balance`: numeric balance after sending
+- `balance`: account balance after sending (treat as a string for exact preservation; format is controlled by the API)
+
+Schema/compatibility requirements:
+
+- Treat `status_text` as optional: it may be absent.
+- Optional fields must use `#[serde(default)]` (or equivalent) to avoid hard failures when fields are missing.
+- Response parsing must allow unknown fields (do not use `#[serde(deny_unknown_fields)]`), to remain forward-compatible if SMS.RU adds fields later.
+
+Money/balance representation:
+
+- `balance` must be modeled as `Option<String>` in the public API to preserve the exact value and avoid floating-point issues.
+- Convenience parsing (e.g., into `rust_decimal::Decimal`) may be provided behind an optional feature later.
 
 Library behavior:
 
@@ -97,14 +125,30 @@ When `json` is not set, the server returns a plain-text multi-line response:
 
 Library behavior:
 
-- The library should default to JSON and only support non-JSON parsing behind an explicit opt-in API (since its format is less structured).
+- The library should default to JSON and does not support non-JSON parsing in the client; `SendOptions.json` must be `JsonMode::Json`.
 
 ## Status codes
 
 The API uses numeric codes both for request-level results and per-message delivery / error statuses. The crate should:
 
-- Provide a `StatusCode` newtype or enum covering known codes.
+- Provide a `StatusCode` newtype wrapping an integer (recommend `i32`).
 - Preserve unknown numeric codes (forward compatibility).
+- Expose a non-exhaustive `KnownStatusCode` enum for the known codes listed in this spec.
+- Provide helpers on `StatusCode`, at minimum:
+  - `fn known_kind(&self) -> Option<KnownStatusCode>`
+  - `fn is_retryable(&self) -> bool` (optional convenience)
+- Equality and comparisons must be based on the underlying numeric value (`StatusCode(…)`), not on `KnownStatusCode` variants (since unknown codes must be handled).
+
+Recommended shape:
+
+```rust
+pub struct StatusCode(pub i32);
+
+#[non_exhaustive]
+pub enum KnownStatusCode {
+    // ... known variants for codes in “Status codes”
+}
+```
 
 ### Delivery / message state codes
 
@@ -173,20 +217,27 @@ This section describes the intended shape of the library API. Exact naming may e
 ### Client
 
 - `SmsRuClient::new(auth)` constructs a client:
-  - `auth`: `Auth::ApiId(String)` or `Auth::LoginPassword { login: String, password: String }`
-- `SmsRuClient::with_http_client(auth, http)` optionally constructs a client with a caller-supplied HTTP backend (initially likely `reqwest::Client`).
+  - `auth`: `Auth::ApiId(ApiId)` or `Auth::LoginPassword { login: Login, password: Password }`
 - `SmsRuClient::send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
+- `SmsRuClient::builder(auth)` provides endpoint/timeout/user-agent customization without exposing `reqwest`.
+
+HTTP backend policy:
+
+- The initial implementation commits to `reqwest` internally.
+- Public APIs must not expose `reqwest::Client` (or other backend-specific types) in function signatures.
+- If HTTP customization is needed, provide a crate-owned builder/config type (e.g., `SmsRuClientBuilder`) rather than taking a raw HTTP client.
+- Optional `blocking` support may be provided behind a Cargo feature.
 
 ### Types
 
 - `SendSms` request model:
   - recipients: `ToMany` or `PerRecipient`
-  - options: `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
+  - options: `json`, `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
 - `SendSmsResponse`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
   - `status_text`: `Option<String>`
-  - `balance`: `Option<f64>`
+  - `balance`: `Option<String>`
   - `sms`: `BTreeMap<String, SmsResult>`
 - `SmsResult`:
   - `status`: `Ok`/`Error`
@@ -194,47 +245,71 @@ This section describes the intended shape of the library API. Exact naming may e
   - `status_text`: `Option<String>`
   - `sms_id`: `Option<String>`
 
+`StatusCode` is a forward-compatible newtype; known codes are available via `StatusCode::known_kind() -> Option<KnownStatusCode>`.
+
 ### Errors
 
 - `SmsRuError::Transport` (network/HTTP layer)
+- `SmsRuError::HttpStatus { status: u16, body: Option<String> }` (non-2xx HTTP response; body captured for debugging when possible)
 - `SmsRuError::Parse` (invalid JSON or unexpected format)
 - `SmsRuError::Api { status_code, status_text }` (top-level API error)
+- `SmsRuError::UnsupportedResponseFormat` (non-JSON response requested)
+- `SmsRuError::Validation` (failed construction / invalid inputs)
 
 Per-recipient errors should not automatically map to `SmsRuError::Api` when the top-level response is OK.
 
 ## Implementation notes (non-normative)
 
 - JSON parsing: `serde` + `serde_json`.
-- Transport: `reqwest` is the expected default backend; the crate may offer `async` and optional `blocking` clients via Cargo features.
+- Transport: `reqwest` is the expected default backend; the crate may offer `blocking` support via a Cargo feature.
 
 ## Examples (intended usage)
 
+Note: examples use `+7...` for readability; SMS.RU also accepts numbers without a leading `+` (as shown in the upstream documentation).
+
 ### Send one text to multiple recipients (JSON)
 
-```rust
-use smsru::{Auth, SendSms, SmsRuClient};
+```rust,no_run
+use smsru::{Auth, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsRuClient};
 
-let client = SmsRuClient::new(Auth::ApiId("...".into()));
-let resp = client.send_sms(SendSms::to_many(
-    vec!["+79255070602".into(), "+74993221627".into()],
-    "hello world".into(),
-))?;
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let recipients = vec![
+    RawPhoneNumber::new("+79255070602")?,
+    RawPhoneNumber::new("+74993221627")?,
+];
+let msg = MessageText::new("hello world")?;
+let request = SendSms::to_many(recipients, msg, SendOptions::default())?;
+let resp = client.send_sms(request).await?;
 
 for (phone, result) in resp.sms {
     println!("{phone}: {:?} {:?}", result.status, result.status_code);
 }
+# Ok(())
+# }
 ```
 
 ### Send different texts per recipient
 
-```rust
+```rust,no_run
 use std::collections::BTreeMap;
-use smsru::{Auth, SendSms, SmsRuClient};
+use smsru::{Auth, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsRuClient};
 
+# async fn run() -> Result<(), smsru::SmsRuError> {
 let mut messages = BTreeMap::new();
-messages.insert("+79255070602".into(), "Привет 1".into());
-messages.insert("+74993221627".into(), "Привет 2".into());
+messages.insert(
+    RawPhoneNumber::new("+79255070602")?,
+    MessageText::new("Привет 1")?,
+);
+messages.insert(
+    RawPhoneNumber::new("+74993221627")?,
+    MessageText::new("Привет 2")?,
+);
 
-let client = SmsRuClient::new(Auth::ApiId("...".into()));
-let resp = client.send_sms(SendSms::per_recipient(messages))?;
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let request = SendSms::per_recipient(messages, SendOptions::default())?;
+let resp = client.send_sms(request).await?;
+# let _ = resp;
+# Ok(())
+# }
 ```
