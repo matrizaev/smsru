@@ -6,11 +6,13 @@ use phonenumber::country;
 pub struct ApiId(String);
 
 impl ApiId {
+    pub const FIELD: &'static str = "api_id";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(ValidationError::Empty { field: "api_id" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(trimmed.to_owned()))
     }
@@ -24,11 +26,13 @@ impl ApiId {
 pub struct Login(String);
 
 impl Login {
+    pub const FIELD: &'static str = "login";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(ValidationError::Empty { field: "login" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(trimmed.to_owned()))
     }
@@ -42,10 +46,12 @@ impl Login {
 pub struct Password(String);
 
 impl Password {
+    pub const FIELD: &'static str = "password";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         if value.is_empty() {
-            return Err(ValidationError::Empty { field: "password" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(value))
     }
@@ -59,13 +65,13 @@ impl Password {
 pub struct PartnerId(String);
 
 impl PartnerId {
+    pub const FIELD: &'static str = "partner_id";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(ValidationError::Empty {
-                field: "partner_id",
-            });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(trimmed.to_owned()))
     }
@@ -79,11 +85,13 @@ impl PartnerId {
 pub struct SenderId(String);
 
 impl SenderId {
+    pub const FIELD: &'static str = "from";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(ValidationError::Empty { field: "from" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(trimmed.to_owned()))
     }
@@ -97,16 +105,45 @@ impl SenderId {
 pub struct MessageText(String);
 
 impl MessageText {
+    pub const FIELD: &'static str = "msg";
+
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         if value.trim().is_empty() {
-            return Err(ValidationError::Empty { field: "msg" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
         Ok(Self(value))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RawPhoneNumber(String);
+
+impl RawPhoneNumber {
+    pub const FIELD: &'static str = "to";
+
+    pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let value = value.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ValidationError::Empty { field: Self::FIELD });
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    pub fn raw(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<PhoneNumber> for RawPhoneNumber {
+    fn from(value: PhoneNumber) -> Self {
+        // Preserve E.164 normalization semantics for opt-in `PhoneNumber`.
+        Self(value.e164)
     }
 }
 
@@ -118,6 +155,8 @@ pub struct PhoneNumber {
 }
 
 impl PhoneNumber {
+    pub const FIELD: &'static str = "to";
+
     pub fn parse(
         default_region: Option<country::Id>,
         input: impl Into<String>,
@@ -125,7 +164,7 @@ impl PhoneNumber {
         let input = input.into();
         let raw = input.trim().to_owned();
         if raw.is_empty() {
-            return Err(ValidationError::Empty { field: "to" });
+            return Err(ValidationError::Empty { field: Self::FIELD });
         }
 
         let parsed = phonenumber::parse(default_region, &raw)
@@ -140,6 +179,10 @@ impl PhoneNumber {
 
     pub fn raw(&self) -> &str {
         &self.raw
+    }
+
+    pub fn e164(&self) -> &str {
+        &self.e164
     }
 
     pub fn parsed(&self) -> &phonenumber::PhoneNumber {
@@ -177,6 +220,8 @@ impl std::cmp::Ord for PhoneNumber {
 pub struct UnixTimestamp(u64);
 
 impl UnixTimestamp {
+    pub const FIELD: &'static str = "time";
+
     pub fn new(value: u64) -> Self {
         Self(value)
     }
@@ -190,6 +235,8 @@ impl UnixTimestamp {
 pub struct TtlMinutes(u16);
 
 impl TtlMinutes {
+    pub const FIELD: &'static str = "ttl";
+
     pub const MIN: u16 = 1;
     pub const MAX: u16 = 1440;
 

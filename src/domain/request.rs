@@ -3,13 +3,21 @@ use std::net::IpAddr;
 
 use crate::domain::validation::ValidationError;
 use crate::domain::value::{
-    MessageText, PartnerId, PhoneNumber, SenderId, TtlMinutes, UnixTimestamp,
+    MessageText, PartnerId, RawPhoneNumber, SenderId, TtlMinutes, UnixTimestamp,
 };
 
 pub const SEND_SMS_MAX_RECIPIENTS: usize = 100;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JsonMode {
+    #[default]
+    Json,
+    Plain,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SendOptions {
+    pub json: JsonMode,
     pub from: Option<SenderId>,
     pub ip: Option<IpAddr>,
     pub time: Option<UnixTimestamp>,
@@ -28,25 +36,27 @@ pub enum SendSms {
 
 #[derive(Debug, Clone)]
 pub struct ToMany {
-    recipients: Vec<PhoneNumber>,
+    recipients: Vec<RawPhoneNumber>,
     msg: MessageText,
     options: SendOptions,
 }
 
 #[derive(Debug, Clone)]
 pub struct PerRecipient {
-    messages: BTreeMap<PhoneNumber, MessageText>,
+    messages: BTreeMap<RawPhoneNumber, MessageText>,
     options: SendOptions,
 }
 
 impl SendSms {
     pub fn to_many(
-        recipients: Vec<PhoneNumber>,
+        recipients: Vec<RawPhoneNumber>,
         msg: MessageText,
         options: SendOptions,
     ) -> Result<Self, ValidationError> {
         if recipients.is_empty() {
-            return Err(ValidationError::Empty { field: "to" });
+            return Err(ValidationError::Empty {
+                field: RawPhoneNumber::FIELD,
+            });
         }
         if recipients.len() > SEND_SMS_MAX_RECIPIENTS {
             return Err(ValidationError::TooManyRecipients {
@@ -62,11 +72,13 @@ impl SendSms {
     }
 
     pub fn per_recipient(
-        messages: BTreeMap<PhoneNumber, MessageText>,
+        messages: BTreeMap<RawPhoneNumber, MessageText>,
         options: SendOptions,
     ) -> Result<Self, ValidationError> {
         if messages.is_empty() {
-            return Err(ValidationError::Empty { field: "to" });
+            return Err(ValidationError::Empty {
+                field: RawPhoneNumber::FIELD,
+            });
         }
         if messages.len() > SEND_SMS_MAX_RECIPIENTS {
             return Err(ValidationError::TooManyRecipients {
@@ -79,7 +91,7 @@ impl SendSms {
 }
 
 impl ToMany {
-    pub fn recipients(&self) -> &[PhoneNumber] {
+    pub fn recipients(&self) -> &[RawPhoneNumber] {
         &self.recipients
     }
 
@@ -93,7 +105,7 @@ impl ToMany {
 }
 
 impl PerRecipient {
-    pub fn messages(&self) -> &BTreeMap<PhoneNumber, MessageText> {
+    pub fn messages(&self) -> &BTreeMap<RawPhoneNumber, MessageText> {
         &self.messages
     }
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::domain::value::{PhoneNumber, StatusCode};
+use crate::domain::value::{RawPhoneNumber, StatusCode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Status {
@@ -13,8 +13,8 @@ pub struct SendSmsResponse {
     pub status: Status,
     pub status_code: StatusCode,
     pub status_text: Option<String>,
-    pub balance: Option<f64>,
-    pub sms: BTreeMap<PhoneNumber, SmsResult>,
+    pub balance: Option<String>,
+    pub sms: BTreeMap<RawPhoneNumber, SmsResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

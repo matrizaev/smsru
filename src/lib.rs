@@ -9,7 +9,7 @@
 //! use smsru::{Auth, SmsRuClient};
 //!
 //! # async fn example() -> Result<(), smsru::SmsRuError> {
-//! let client = SmsRuClient::new(Auth::ApiId("...".to_owned()));
+//! let client = SmsRuClient::new(Auth::api_id("...")?);
 //! // let resp = client.send_sms(...).await?;
 //! # Ok(())
 //! # }
@@ -19,3 +19,10 @@
 pub mod client;
 pub mod domain;
 pub mod transport;
+
+pub use client::{Auth, SmsRuClient, SmsRuClientBuilder, SmsRuError};
+pub use domain::{
+    ApiId, JsonMode, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
+    SendOptions, SendSms, SendSmsResponse, SenderId, SmsResult, Status, StatusCode, TtlMinutes,
+    UnixTimestamp, ValidationError,
+};

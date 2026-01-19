@@ -5,12 +5,13 @@ mod response;
 mod validation;
 mod value;
 
+pub use request::JsonMode;
 pub use request::{SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms};
 pub use response::{SendSmsResponse, SmsResult, Status};
 pub use validation::ValidationError;
 pub use value::{
-    ApiId, Login, MessageText, PartnerId, Password, PhoneNumber, SenderId, StatusCode, TtlMinutes,
-    UnixTimestamp,
+    ApiId, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber, SenderId,
+    StatusCode, TtlMinutes, UnixTimestamp,
 };
 
 #[cfg(test)]
@@ -23,7 +24,9 @@ mod tests {
     fn api_id_rejects_empty() {
         assert!(matches!(
             ApiId::new("   "),
-            Err(ValidationError::Empty { field: "api_id" })
+            Err(ValidationError::Empty {
+                field: ApiId::FIELD
+            })
         ));
     }
 
@@ -31,7 +34,9 @@ mod tests {
     fn password_rejects_empty() {
         assert!(matches!(
             Password::new(""),
-            Err(ValidationError::Empty { field: "password" })
+            Err(ValidationError::Empty {
+                field: Password::FIELD
+            })
         ));
     }
 
@@ -39,6 +44,13 @@ mod tests {
     fn phone_number_parses_with_region_and_trims() {
         let pn = PhoneNumber::parse(Some(phonenumber::country::Id::RU), " 79251234567 ").unwrap();
         assert_eq!(pn.raw(), "79251234567");
+    }
+
+    #[test]
+    fn raw_phone_number_from_phone_number_uses_e164() {
+        let pn = PhoneNumber::parse(Some(phonenumber::country::Id::RU), "79251234567").unwrap();
+        let raw: RawPhoneNumber = pn.into();
+        assert_eq!(raw.raw(), "+79251234567");
     }
 
     #[test]
@@ -51,7 +63,7 @@ mod tests {
 
     #[test]
     fn send_sms_recipient_limit_is_enforced() {
-        let pn = PhoneNumber::parse(Some(phonenumber::country::Id::RU), "79251234567").unwrap();
+        let pn = RawPhoneNumber::new("79251234567").unwrap();
         let msg = MessageText::new("hi").unwrap();
         let recipients = vec![pn; SEND_SMS_MAX_RECIPIENTS + 1];
         let err = SendSms::to_many(recipients, msg, SendOptions::default()).unwrap_err();
@@ -61,7 +73,12 @@ mod tests {
     #[test]
     fn per_recipient_requires_non_empty() {
         let err = SendSms::per_recipient(BTreeMap::new(), SendOptions::default()).unwrap_err();
-        assert!(matches!(err, ValidationError::Empty { field: "to" }));
+        assert!(matches!(
+            err,
+            ValidationError::Empty {
+                field: RawPhoneNumber::FIELD
+            }
+        ));
     }
 
     #[test]
