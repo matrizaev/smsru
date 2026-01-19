@@ -113,3 +113,105 @@ impl PerRecipient {
         &self.options
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_recipients(count: usize) -> Vec<RawPhoneNumber> {
+        (0..count)
+            .map(|idx| RawPhoneNumber::new(format!("+792512300{idx:02}")).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn to_many_rejects_empty_recipients() {
+        let msg = MessageText::new("hi").unwrap();
+        let err = SendSms::to_many(Vec::new(), msg, SendOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::Empty {
+                field: RawPhoneNumber::FIELD
+            }
+        );
+    }
+
+    #[test]
+    fn to_many_rejects_too_many_recipients() {
+        let msg = MessageText::new("hi").unwrap();
+        let recipients = make_recipients(SEND_SMS_MAX_RECIPIENTS + 1);
+        let err = SendSms::to_many(recipients, msg, SendOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::TooManyRecipients {
+                max: SEND_SMS_MAX_RECIPIENTS,
+                actual: SEND_SMS_MAX_RECIPIENTS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn per_recipient_rejects_empty_messages() {
+        let err = SendSms::per_recipient(BTreeMap::new(), SendOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::Empty {
+                field: RawPhoneNumber::FIELD
+            }
+        );
+    }
+
+    #[test]
+    fn per_recipient_rejects_too_many_messages() {
+        let mut messages = BTreeMap::new();
+        for idx in 0..(SEND_SMS_MAX_RECIPIENTS + 1) {
+            messages.insert(
+                RawPhoneNumber::new(format!("+792512310{idx:02}")).unwrap(),
+                MessageText::new("hi").unwrap(),
+            );
+        }
+        let err = SendSms::per_recipient(messages, SendOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::TooManyRecipients {
+                max: SEND_SMS_MAX_RECIPIENTS,
+                actual: SEND_SMS_MAX_RECIPIENTS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn to_many_exposes_fields() {
+        let recipients = make_recipients(2);
+        let msg = MessageText::new("hello").unwrap();
+        let options = SendOptions::default();
+        let req = SendSms::to_many(recipients.clone(), msg.clone(), options.clone()).unwrap();
+
+        match req {
+            SendSms::ToMany(to_many) => {
+                assert_eq!(to_many.recipients(), recipients.as_slice());
+                assert_eq!(to_many.msg(), &msg);
+                assert_eq!(to_many.options().json, options.json);
+            }
+            SendSms::PerRecipient(_) => panic!("expected to_many request"),
+        }
+    }
+
+    #[test]
+    fn per_recipient_exposes_fields() {
+        let mut messages = BTreeMap::new();
+        let p1 = RawPhoneNumber::new("+79251234567").unwrap();
+        let msg = MessageText::new("hello").unwrap();
+        messages.insert(p1.clone(), msg.clone());
+        let options = SendOptions::default();
+
+        let req = SendSms::per_recipient(messages.clone(), options.clone()).unwrap();
+        match req {
+            SendSms::PerRecipient(per_recipient) => {
+                assert_eq!(per_recipient.messages(), &messages);
+                assert_eq!(per_recipient.options().json, options.json);
+            }
+            SendSms::ToMany(_) => panic!("expected per_recipient request"),
+        }
+    }
+}

@@ -434,4 +434,71 @@ mod tests {
             }
         ));
     }
+
+    #[tokio::test]
+    async fn send_sms_maps_empty_http_body_to_none() {
+        let transport = FakeTransport::new(503, "   ");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let request = SendSms::to_many(
+            vec![phone],
+            MessageText::new("hello").unwrap(),
+            SendOptions::default(),
+        )
+        .unwrap();
+
+        let err = client.send_sms(request).await.unwrap_err();
+        assert!(matches!(
+            err,
+            SmsRuError::HttpStatus {
+                status: 503,
+                body: None
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn send_sms_rejects_plain_text_mode() {
+        let transport = FakeTransport::new(200, "{}");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let request = SendSms::to_many(
+            vec![phone],
+            MessageText::new("hello").unwrap(),
+            SendOptions {
+                json: crate::domain::JsonMode::Plain,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = client.send_sms(request).await.unwrap_err();
+        assert!(matches!(err, SmsRuError::UnsupportedResponseFormat(_)));
+    }
+
+    #[tokio::test]
+    async fn send_sms_maps_invalid_json_to_parse_error() {
+        let transport = FakeTransport::new(200, "{ not json }");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let request = SendSms::to_many(
+            vec![phone],
+            MessageText::new("hello").unwrap(),
+            SendOptions::default(),
+        )
+        .unwrap();
+
+        let err = client.send_sms(request).await.unwrap_err();
+        assert!(matches!(err, SmsRuError::Parse(_)));
+    }
+
+    #[test]
+    fn auth_constructors_validate_inputs() {
+        assert!(Auth::api_id("   ").is_err());
+        assert!(Auth::login_password("", "pass").is_err());
+        assert!(Auth::login_password("user", "").is_err());
+    }
 }

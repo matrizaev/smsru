@@ -327,4 +327,55 @@ mod tests {
         assert_eq!(result.status_code, StatusCode::new(100));
         assert_eq!(result.sms_id.as_deref(), Some("abc123"));
     }
+
+    #[test]
+    fn decode_json_response_supports_string_balance_and_trimmed_keys() {
+        let p1 = RawPhoneNumber::new("+79251234567").unwrap();
+        let msg = MessageText::new("hello").unwrap();
+        let req = SendSms::to_many(vec![p1.clone()], msg, SendOptions::default()).unwrap();
+
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "balance": "5.00",
+          "sms": {
+            " +79251234567 ": {
+              "status": "OK",
+              "status_code": 100
+            }
+          }
+        }
+        "#;
+
+        let resp = decode_send_sms_json_response(&req, json).unwrap();
+        assert_eq!(resp.balance.as_deref(), Some("5.00"));
+        assert!(resp.sms.contains_key(&p1));
+    }
+
+    #[test]
+    fn decode_json_response_errors_on_unknown_phone_key() {
+        let p1 = RawPhoneNumber::new("+79251234567").unwrap();
+        let msg = MessageText::new("hello").unwrap();
+        let req = SendSms::to_many(vec![p1], msg, SendOptions::default()).unwrap();
+
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "sms": {
+            "000": {
+              "status": "OK",
+              "status_code": 100
+            }
+          }
+        }
+        "#;
+
+        let err = decode_send_sms_json_response(&req, json).unwrap_err();
+        match err {
+            TransportError::UnknownPhoneNumberKey { key } => assert_eq!(key, "000"),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }
