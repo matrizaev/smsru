@@ -1,14 +1,21 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Typed Rust client for the SMS.RU HTTP API.
+//!
+//! This crate is implemented in milestones (see `PLANS.md`). The public API is
+//! still evolving, but the design follows `SPEC.md`: a domain layer of strong
+//! types, a transport layer for wire-format quirks, and a small client layer
+//! orchestrating requests.
+//!
+//! ```rust,ignore
+//! use smsru::{Auth, SmsRuClient};
+//!
+//! # async fn example() -> Result<(), smsru::SmsRuError> {
+//! let client = SmsRuClient::new(Auth::ApiId("...".to_owned()));
+//! // let resp = client.send_sms(...).await?;
+//! # Ok(())
+//! # }
+//! ```
+#![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod client;
+pub mod domain;
+pub mod transport;
