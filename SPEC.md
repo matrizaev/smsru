@@ -53,17 +53,16 @@ Notes:
 
 Phone-number policy (normative):
 
-- By default, phone numbers are treated as opaque strings and are transmitted as provided (after trimming surrounding whitespace).
-- E.164 normalization is opt-in:
-  - The crate may expose a `PhoneNumber` type (backed by the `phonenumber` crate) and/or dedicated constructors (e.g., `SendSms::to_many_e164(...)`) that validate and normalize numbers before sending.
-  - E.164 normalization must not rely on an implicit region default. If parsing requires a region, it must be an explicit input to the API.
+- By default, phone numbers are treated as opaque strings and are transmitted as provided (after trimming surrounding whitespace). This is modeled with `RawPhoneNumber`.
+- E.164 normalization is opt-in via `PhoneNumber::parse(default_region, input)` backed by the `phonenumber` crate. `PhoneNumber` can be converted into `RawPhoneNumber` for transport.
+- E.164 normalization must not rely on an implicit region default. If parsing requires a region, it must be an explicit input to the API.
 - Parse/normalization failures:
-  - APIs that accept `PhoneNumber` (or `*_e164` constructors) must fail at construction/validation time.
-  - APIs that accept raw strings do not perform phone parsing; invalid numbers are rejected by the server via status codes (e.g., `202`, `207`).
+  - APIs that accept `PhoneNumber` must fail at construction/validation time.
+  - APIs that accept `RawPhoneNumber` do not perform phone parsing; invalid numbers are rejected by the server via status codes (e.g., `202`, `207`).
 
 ### Optional parameters
 
-- `json=1` (recommended): request JSON response. The library should always send this unless explicitly overridden.
+- `json=1` (recommended): request JSON response. The library always sends this; `JsonMode::Plain` is rejected by the client.
 - `from`: sender name/phone. Must be approved by an administrator; if omitted, default sender is used (per SMS.RU settings).
 - `ip`: end-user IP address (not the server IP). Used for anti-fraud protections when SMS is sent as a user action (e.g., OTP). If many messages are sent with the same `ip`, SMS.RU may block sending (settings exist in the dashboard).
 - `time`: delayed send time as a UNIX timestamp. Must be no more than 2 months in the future; if less than current time, send immediately.
@@ -77,8 +76,8 @@ Phone-number policy (normative):
 
 The crate should expose a request type that can represent both “same text to many numbers” and “different texts per number”:
 
-- `SendSms::ToMany { to: Vec<String>, msg: String, ... }`
-- `SendSms::PerRecipient { messages: BTreeMap<String, String>, ... }`
+- `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
+- `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
 
 The client must serialize these into the correct SMS.RU parameter format.
 
@@ -126,7 +125,7 @@ When `json` is not set, the server returns a plain-text multi-line response:
 
 Library behavior:
 
-- The library should default to JSON and only support non-JSON parsing behind an explicit opt-in API (since its format is less structured).
+- The library should default to JSON and does not support non-JSON parsing in the client; `SendOptions.json` must be `JsonMode::Json`.
 
 ## Status codes
 
@@ -218,8 +217,9 @@ This section describes the intended shape of the library API. Exact naming may e
 ### Client
 
 - `SmsRuClient::new(auth)` constructs a client:
-  - `auth`: `Auth::ApiId(String)` or `Auth::LoginPassword { login: String, password: String }`
+  - `auth`: `Auth::ApiId(ApiId)` or `Auth::LoginPassword { login: Login, password: Password }`
 - `SmsRuClient::send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
+- `SmsRuClient::builder(auth)` provides endpoint/timeout/user-agent customization without exposing `reqwest`.
 
 HTTP backend policy:
 
@@ -232,7 +232,7 @@ HTTP backend policy:
 
 - `SendSms` request model:
   - recipients: `ToMany` or `PerRecipient`
-  - options: `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
+  - options: `json`, `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
 - `SendSmsResponse`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
@@ -253,6 +253,8 @@ HTTP backend policy:
 - `SmsRuError::HttpStatus { status: u16, body: Option<String> }` (non-2xx HTTP response; body captured for debugging when possible)
 - `SmsRuError::Parse` (invalid JSON or unexpected format)
 - `SmsRuError::Api { status_code, status_text }` (top-level API error)
+- `SmsRuError::UnsupportedResponseFormat` (non-JSON response requested)
+- `SmsRuError::Validation` (failed construction / invalid inputs)
 
 Per-recipient errors should not automatically map to `SmsRuError::Api` when the top-level response is OK.
 
@@ -267,30 +269,47 @@ Note: examples use `+7...` for readability; SMS.RU also accepts numbers without 
 
 ### Send one text to multiple recipients (JSON)
 
-```rust
-use smsru::{Auth, SendSms, SmsRuClient};
+```rust,no_run
+use smsru::{Auth, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsRuClient};
 
-let client = SmsRuClient::new(Auth::ApiId("...".into()));
-let resp = client.send_sms(SendSms::to_many(
-    vec!["+79255070602".into(), "+74993221627".into()],
-    "hello world".into(),
-))?;
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let recipients = vec![
+    RawPhoneNumber::new("+79255070602")?,
+    RawPhoneNumber::new("+74993221627")?,
+];
+let msg = MessageText::new("hello world")?;
+let request = SendSms::to_many(recipients, msg, SendOptions::default())?;
+let resp = client.send_sms(request).await?;
 
 for (phone, result) in resp.sms {
     println!("{phone}: {:?} {:?}", result.status, result.status_code);
 }
+# Ok(())
+# }
 ```
 
 ### Send different texts per recipient
 
-```rust
+```rust,no_run
 use std::collections::BTreeMap;
-use smsru::{Auth, SendSms, SmsRuClient};
+use smsru::{Auth, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsRuClient};
 
+# async fn run() -> Result<(), smsru::SmsRuError> {
 let mut messages = BTreeMap::new();
-messages.insert("+79255070602".into(), "Привет 1".into());
-messages.insert("+74993221627".into(), "Привет 2".into());
+messages.insert(
+    RawPhoneNumber::new("+79255070602")?,
+    MessageText::new("Привет 1")?,
+);
+messages.insert(
+    RawPhoneNumber::new("+74993221627")?,
+    MessageText::new("Привет 2")?,
+);
 
-let client = SmsRuClient::new(Auth::ApiId("...".into()));
-let resp = client.send_sms(SendSms::per_recipient(messages))?;
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let request = SendSms::per_recipient(messages, SendOptions::default())?;
+let resp = client.send_sms(request).await?;
+# let _ = resp;
+# Ok(())
+# }
 ```

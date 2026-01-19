@@ -10,8 +10,8 @@ pub use request::{SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms};
 pub use response::{SendSmsResponse, SmsResult, Status};
 pub use validation::ValidationError;
 pub use value::{
-    ApiId, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber, SenderId,
-    StatusCode, TtlMinutes, UnixTimestamp,
+    ApiId, KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
+    SenderId, StatusCode, TtlMinutes, UnixTimestamp,
 };
 
 #[cfg(test)]
@@ -84,12 +84,20 @@ mod tests {
     #[test]
     fn status_code_known_mapping() {
         let code = StatusCode::new(100);
-        assert_eq!(
-            code.known(),
-            Some(super::value::KnownStatusCode::RequestOkOrQueued)
-        );
+        assert_eq!(code.known_kind(), Some(KnownStatusCode::RequestOkOrQueued));
 
         let unknown = StatusCode::new(999_999);
-        assert_eq!(unknown.known(), None);
+        assert_eq!(unknown.known_kind(), None);
+    }
+
+    #[test]
+    fn status_code_helpers_cover_known_kinds() {
+        let retryable = StatusCode::new(220);
+        assert!(retryable.is_retryable());
+        assert!(!retryable.is_auth_error());
+
+        let auth_error = StatusCode::new(301);
+        assert!(auth_error.is_auth_error());
+        assert!(!auth_error.is_retryable());
     }
 }

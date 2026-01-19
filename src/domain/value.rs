@@ -271,6 +271,24 @@ impl StatusCode {
     pub fn known(self) -> Option<KnownStatusCode> {
         KnownStatusCode::from_code(self.0)
     }
+
+    pub fn known_kind(self) -> Option<KnownStatusCode> {
+        self.known()
+    }
+
+    pub fn is_retryable(self) -> bool {
+        matches!(
+            self.known_kind(),
+            Some(kind) if kind.is_retryable()
+        )
+    }
+
+    pub fn is_auth_error(self) -> bool {
+        matches!(
+            self.known_kind(),
+            Some(kind) if kind.is_auth_error()
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -391,5 +409,22 @@ impl KnownStatusCode {
             902 => Self::CallbackHandlerNotFound,
             _ => return None,
         })
+    }
+
+    pub fn is_retryable(self) -> bool {
+        matches!(
+            self,
+            Self::ServiceTemporarilyUnavailable
+                | Self::TooManyConfirmationCodes
+                | Self::TooManyWrongAttempts
+                | Self::ServerError
+        )
+    }
+
+    pub fn is_auth_error(self) -> bool {
+        matches!(
+            self,
+            Self::InvalidApiId | Self::InvalidToken | Self::InvalidAuth | Self::AccountNotConfirmed
+        )
     }
 }
