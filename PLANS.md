@@ -11,7 +11,7 @@ This plan implements the `smsru` crate per `SPEC.md`.
   - `serde`, `serde_json`
   - `reqwest` (likely with `json`, `rustls-tls`)
   - `thiserror`
-  - `phonenumber` (parse/validate/format recipient numbers)
+  - `phonenumber` (optional: parse/validate/normalize numbers for opt-in E.164 APIs)
   - `url` (optional; only if needed)
 - Add crate-level docs with a short example.
 - Acceptance: `cargo test` passes, `cargo fmt` clean.
@@ -22,7 +22,8 @@ Create `src/domain/` with:
 
 - Newtypes with validation:
   - `ApiId`, `Login`, `Password`
-  - `PhoneNumber` (backed by the `phonenumber` crate; keep parsing/region behavior explicit)
+  - `PhoneNumber` (opt-in E.164 normalization backed by `phonenumber`; region handling must be explicit)
+  - `RawPhoneNumber` (opaque string wrapper for the default pass-through behavior)
   - `MessageText` (UTF-8 implied; validate non-empty and max length policy if desired)
   - `SenderId` (optional)
   - `UnixTimestamp`, `TtlMinutes`
@@ -33,7 +34,8 @@ Create `src/domain/` with:
 - Response model:
   - `SendSmsResponse`, `SmsResult`
   - `Status` enum (`Ok`/`Error`)
-  - `StatusCode` newtype + known-code mapping helpers
+  - `StatusCode(i32)` newtype + `KnownStatusCode` (non-exhaustive) + helpers (`known_kind`, optional `is_retryable`)
+  - `balance: Option<String>` (preserve exact API formatting; no floats in the public model)
 - Acceptance: unit tests for constructors/validation; no transport code yet.
 
 ### M2 — Transport layer (wire format + serde models)
@@ -47,6 +49,7 @@ Create `src/transport/` with:
   - Always include `json=1` by default.
 - Response decoding:
   - `serde` structs mirroring SMS.RU JSON schema (`status`, `status_code`, `sms`, `balance`, optional `status_text`).
+  - Use `#[serde(default)]` for optional fields; allow unknown fields (no `deny_unknown_fields`).
   - Convert transport structs into domain response types.
 - Acceptance: unit tests for parameter encoding and JSON parsing fixtures.
 
@@ -57,11 +60,12 @@ Create `src/client/` with:
 - `Auth` enum:
   - `ApiId(ApiId)` or `LoginPassword { login: Login, password: Password }`
 - `SmsRuClient`:
-  - `new(auth)` using a default `reqwest::Client`
-  - `with_http_client(auth, reqwest::Client)`
+  - `new(auth)` using an internal `reqwest` client (not exposed in public signatures)
+  - optional `SmsRuClientBuilder`/config API for timeouts, user-agent, etc. (crate-owned types only)
   - `send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
 - Error type `SmsRuError`:
   - `Transport` (HTTP errors / timeouts)
+  - `HttpStatus { status: u16, body: Option<String> }` (non-2xx response)
   - `Api { status_code, status_text }`
   - `Parse` (invalid JSON / schema drift)
   - `Validation` (failed construction / invalid inputs)
@@ -100,5 +104,5 @@ Create `src/client/` with:
 ## Open decisions (resolve before locking public API)
 
 - Sync vs async: async-only first, or provide `blocking` behind a feature.
-- Phone number validation strictness: permissive string vs normalized E.164-like type.
+- Phone number API shape: keep default pass-through (`RawPhoneNumber`) and define the opt-in E.164 parsing API (including explicit region input when needed).
 - `MessageText` length rules: enforce “<= 8 SMS parts” as a soft validation or leave to server.
