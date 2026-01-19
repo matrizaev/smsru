@@ -428,3 +428,77 @@ impl KnownStatusCode {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn string_newtypes_trim_or_validate() {
+        let api_id = ApiId::new("  key ").unwrap();
+        assert_eq!(api_id.as_str(), "key");
+        assert!(ApiId::new("  ").is_err());
+
+        let login = Login::new(" user ").unwrap();
+        assert_eq!(login.as_str(), "user");
+        assert!(Login::new("").is_err());
+
+        let password = Password::new(" secret ").unwrap();
+        assert_eq!(password.as_str(), " secret ");
+        assert!(Password::new("").is_err());
+
+        let sender = SenderId::new(" sender ").unwrap();
+        assert_eq!(sender.as_str(), "sender");
+
+        let partner = PartnerId::new(" partner ").unwrap();
+        assert_eq!(partner.as_str(), "partner");
+
+        let msg = MessageText::new(" hi ").unwrap();
+        assert_eq!(msg.as_str(), " hi ");
+        assert!(MessageText::new("  ").is_err());
+    }
+
+    #[test]
+    fn raw_phone_number_trims_and_exposes_raw() {
+        let raw = RawPhoneNumber::new(" +79251234567 ").unwrap();
+        assert_eq!(raw.raw(), "+79251234567");
+        assert!(RawPhoneNumber::new("").is_err());
+    }
+
+    #[test]
+    fn phone_number_parsing_and_equality_use_e164() {
+        let p1 = PhoneNumber::parse(None, "+79251234567").unwrap();
+        let p2 = PhoneNumber::parse(None, "+7 925 123-45-67").unwrap();
+        assert_eq!(p1, p2);
+        assert_eq!(p1.e164(), "+79251234567");
+        assert_eq!(p1.raw(), "+79251234567");
+
+        let raw: RawPhoneNumber = p1.clone().into();
+        assert_eq!(raw.raw(), "+79251234567");
+        assert!(PhoneNumber::parse(None, "not-a-number").is_err());
+    }
+
+    #[test]
+    fn ttl_minutes_enforces_range() {
+        assert!(TtlMinutes::new(TtlMinutes::MIN).is_ok());
+        assert!(TtlMinutes::new(TtlMinutes::MAX).is_ok());
+        assert!(TtlMinutes::new(0).is_err());
+        assert!(TtlMinutes::new(TtlMinutes::MAX + 1).is_err());
+    }
+
+    #[test]
+    fn status_code_knows_retryable_and_auth_errors() {
+        let retryable = StatusCode::new(220);
+        assert!(retryable.is_retryable());
+        assert!(!retryable.is_auth_error());
+
+        let auth = StatusCode::new(301);
+        assert!(auth.is_auth_error());
+        assert!(!auth.is_retryable());
+
+        let unknown = StatusCode::new(9999);
+        assert!(unknown.known().is_none());
+        assert!(!unknown.is_retryable());
+        assert!(!unknown.is_auth_error());
+    }
+}

@@ -26,8 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = client.send_sms(request).await?;
     println!(
-        "status: {:?}, status_code: {:?}, balance: {:?}",
-        response.status, response.status_code, response.balance
+        "status: {:?}, status_code: {:?}, balance: {:?}, status_text: {:?}, sms: {:?}",
+        response.status, response.status_code, response.balance, response.status_text, response.sms
     );
 
     Ok(())

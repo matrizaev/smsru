@@ -27,3 +27,32 @@ impl fmt::Display for ValidationError {
 }
 
 impl std::error::Error for ValidationError {}
+
+#[cfg(test)]
+mod tests {
+    use super::ValidationError;
+
+    #[test]
+    fn display_messages_are_human_readable() {
+        let err = ValidationError::Empty { field: "to" };
+        assert_eq!(err.to_string(), "to must not be empty");
+
+        let err = ValidationError::TooManyRecipients { max: 2, actual: 3 };
+        assert_eq!(err.to_string(), "too many recipients: 3 (max 2)");
+
+        let err = ValidationError::InvalidPhoneNumber {
+            input: "bad".to_owned(),
+        };
+        assert_eq!(err.to_string(), "invalid phone number: bad");
+
+        let err = ValidationError::TtlOutOfRange {
+            min: 1,
+            max: 10,
+            actual: 11,
+        };
+        assert_eq!(
+            err.to_string(),
+            "ttl minutes out of range: 11 (expected 1..=10)"
+        );
+    }
+}
