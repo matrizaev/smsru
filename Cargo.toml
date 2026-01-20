@@ -11,6 +11,14 @@ homepage = "https://github.com/matrizaev/smsru"
 documentation = "https://docs.rs/smsru"
 keywords = ["sms", "smsru", "sms-ru", "api", "client"]
 categories = ["api-bindings"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "examples/**",
+    "src/**",
+]
 
 [dependencies]
 phonenumber = "0.3"
