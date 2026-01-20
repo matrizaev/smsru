@@ -3,11 +3,16 @@ use crate::domain::validation::ValidationError;
 use phonenumber::country;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// SMS.RU `api_id` token.
+///
+/// Invariant: non-empty after trimming.
 pub struct ApiId(String);
 
 impl ApiId {
+    /// Form field name used by SMS.RU (`api_id`).
     pub const FIELD: &'static str = "api_id";
 
+    /// Create a validated [`ApiId`].
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
@@ -17,17 +22,23 @@ impl ApiId {
         Ok(Self(trimmed.to_owned()))
     }
 
+    /// Borrow the validated token.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// SMS.RU account login.
+///
+/// Invariant: non-empty after trimming.
 pub struct Login(String);
 
 impl Login {
+    /// Form field name used by SMS.RU (`login`).
     pub const FIELD: &'static str = "login";
 
+    /// Create a validated [`Login`].
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
@@ -37,17 +48,23 @@ impl Login {
         Ok(Self(trimmed.to_owned()))
     }
 
+    /// Borrow the validated login.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// SMS.RU account password.
+///
+/// Invariant: must not be empty (whitespace is preserved and allowed).
 pub struct Password(String);
 
 impl Password {
+    /// Form field name used by SMS.RU (`password`).
     pub const FIELD: &'static str = "password";
 
+    /// Create a validated [`Password`].
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         if value.is_empty() {
@@ -56,17 +73,23 @@ impl Password {
         Ok(Self(value))
     }
 
+    /// Borrow the password as provided.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Optional partner identifier for SMS.RU (`partner_id`).
+///
+/// Invariant: non-empty after trimming.
 pub struct PartnerId(String);
 
 impl PartnerId {
+    /// Form field name used by SMS.RU (`partner_id`).
     pub const FIELD: &'static str = "partner_id";
 
+    /// Create a validated [`PartnerId`].
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
@@ -76,17 +99,23 @@ impl PartnerId {
         Ok(Self(trimmed.to_owned()))
     }
 
+    /// Borrow the validated partner id.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// SMS.RU sender id (`from`).
+///
+/// Invariant: non-empty after trimming. The value must be enabled in your SMS.RU account.
 pub struct SenderId(String);
 
 impl SenderId {
+    /// Form field name used by SMS.RU (`from`).
     pub const FIELD: &'static str = "from";
 
+    /// Create a validated [`SenderId`].
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
@@ -96,17 +125,23 @@ impl SenderId {
         Ok(Self(trimmed.to_owned()))
     }
 
+    /// Borrow the validated sender id.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// SMS message text (`msg`).
+///
+/// Invariant: non-empty after trimming. The original value (including whitespace) is preserved.
 pub struct MessageText(String);
 
 impl MessageText {
+    /// Form field name used by SMS.RU (`msg`).
     pub const FIELD: &'static str = "msg";
 
+    /// Create validated message text.
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         if value.trim().is_empty() {
@@ -115,17 +150,24 @@ impl MessageText {
         Ok(Self(value))
     }
 
+    /// Borrow the message text as provided.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Unvalidated phone number as sent to SMS.RU (`to`).
+///
+/// Invariant: non-empty after trimming. This type does not normalize; if you want E.164
+/// normalization, parse into [`PhoneNumber`] and convert it into [`RawPhoneNumber`].
 pub struct RawPhoneNumber(String);
 
 impl RawPhoneNumber {
+    /// Form field name used by SMS.RU (`to`).
     pub const FIELD: &'static str = "to";
 
+    /// Create a validated (non-empty) raw phone number.
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
         let trimmed = value.trim();
@@ -135,12 +177,14 @@ impl RawPhoneNumber {
         Ok(Self(trimmed.to_owned()))
     }
 
+    /// Raw (trimmed) value as sent to SMS.RU.
     pub fn raw(&self) -> &str {
         &self.0
     }
 }
 
 impl From<PhoneNumber> for RawPhoneNumber {
+    /// Convert an already-parsed phone number to a normalized raw value (E.164).
     fn from(value: PhoneNumber) -> Self {
         // Preserve E.164 normalization semantics for opt-in `PhoneNumber`.
         Self(value.e164)
@@ -148,6 +192,9 @@ impl From<PhoneNumber> for RawPhoneNumber {
 }
 
 #[derive(Debug, Clone)]
+/// Parsed phone number with an E.164 representation.
+///
+/// Equality, ordering, and hashing are based on the E.164 form.
 pub struct PhoneNumber {
     raw: String,
     e164: String,
@@ -155,8 +202,12 @@ pub struct PhoneNumber {
 }
 
 impl PhoneNumber {
+    /// Form field name used by SMS.RU (`to`).
     pub const FIELD: &'static str = "to";
 
+    /// Parse and normalize a phone number into E.164.
+    ///
+    /// `default_region` is used when the input does not contain an explicit country prefix.
     pub fn parse(
         default_region: Option<country::Id>,
         input: impl Into<String>,
@@ -177,14 +228,17 @@ impl PhoneNumber {
         Ok(Self { raw, e164, parsed })
     }
 
+    /// Raw input after trimming.
     pub fn raw(&self) -> &str {
         &self.raw
     }
 
+    /// Normalized E.164 representation.
     pub fn e164(&self) -> &str {
         &self.e164
     }
 
+    /// The parsed phone number from the `phonenumber` crate.
     pub fn parsed(&self) -> &phonenumber::PhoneNumber {
         &self.parsed
     }
@@ -217,29 +271,42 @@ impl std::cmp::Ord for PhoneNumber {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Unix timestamp in seconds (`time`).
+///
+/// This is used by SMS.RU for scheduled sends.
 pub struct UnixTimestamp(u64);
 
 impl UnixTimestamp {
+    /// Form field name used by SMS.RU (`time`).
     pub const FIELD: &'static str = "time";
 
+    /// Create a timestamp value (no range validation is performed).
     pub fn new(value: u64) -> Self {
         Self(value)
     }
 
+    /// Get the underlying timestamp in seconds.
     pub fn value(self) -> u64 {
         self.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// TTL (time-to-live) for delivery attempts in minutes (`ttl`).
+///
+/// Invariant: `1..=1440`.
 pub struct TtlMinutes(u16);
 
 impl TtlMinutes {
+    /// Form field name used by SMS.RU (`ttl`).
     pub const FIELD: &'static str = "ttl";
 
+    /// Minimum allowed TTL value.
     pub const MIN: u16 = 1;
+    /// Maximum allowed TTL value.
     pub const MAX: u16 = 1440;
 
+    /// Create a validated TTL value.
     pub fn new(value: u16) -> Result<Self, ValidationError> {
         if !(Self::MIN..=Self::MAX).contains(&value) {
             return Err(ValidationError::TtlOutOfRange {
@@ -251,31 +318,40 @@ impl TtlMinutes {
         Ok(Self(value))
     }
 
+    /// Get the underlying TTL value.
     pub fn value(self) -> u16 {
         self.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// SMS.RU status code.
+///
+/// This value is preserved as-is even when the code is unknown to this crate.
 pub struct StatusCode(i32);
 
 impl StatusCode {
+    /// Construct a status code from its integer representation.
     pub fn new(code: i32) -> Self {
         Self(code)
     }
 
+    /// Get the integer code as provided by SMS.RU.
     pub fn as_i32(self) -> i32 {
         self.0
     }
 
+    /// Map this code to a known status code variant, if one exists.
     pub fn known(self) -> Option<KnownStatusCode> {
         KnownStatusCode::from_code(self.0)
     }
 
+    /// Alias for [`StatusCode::known`].
     pub fn known_kind(self) -> Option<KnownStatusCode> {
         self.known()
     }
 
+    /// Returns `true` if this status code is considered retryable by the crate.
     pub fn is_retryable(self) -> bool {
         matches!(
             self.known_kind(),
@@ -283,6 +359,7 @@ impl StatusCode {
         )
     }
 
+    /// Returns `true` if this status code represents an authentication/authorization error.
     pub fn is_auth_error(self) -> bool {
         matches!(
             self.known_kind(),
@@ -293,6 +370,9 @@ impl StatusCode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+/// Known SMS.RU status codes supported by this crate.
+///
+/// Unknown codes are preserved as [`StatusCode`] and return `None` from [`KnownStatusCode::from_code`].
 pub enum KnownStatusCode {
     MessageNotFound,
     RequestOkOrQueued,
@@ -351,6 +431,7 @@ pub enum KnownStatusCode {
 }
 
 impl KnownStatusCode {
+    /// Convert a raw SMS.RU integer code into a known variant.
     pub fn from_code(code: i32) -> Option<Self> {
         Some(match code {
             -1 => Self::MessageNotFound,
@@ -411,6 +492,7 @@ impl KnownStatusCode {
         })
     }
 
+    /// Whether this status is likely transient and can be retried.
     pub fn is_retryable(self) -> bool {
         matches!(
             self,
@@ -421,6 +503,7 @@ impl KnownStatusCode {
         )
     }
 
+    /// Whether this status indicates invalid/expired credentials.
     pub fn is_auth_error(self) -> bool {
         matches!(
             self,

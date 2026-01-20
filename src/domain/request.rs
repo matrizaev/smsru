@@ -6,35 +6,60 @@ use crate::domain::value::{
     MessageText, PartnerId, RawPhoneNumber, SenderId, TtlMinutes, UnixTimestamp,
 };
 
+/// SMS.RU "send SMS" API limit: maximum number of recipients per request.
 pub const SEND_SMS_MAX_RECIPIENTS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Response format mode requested from SMS.RU.
+///
+/// The client currently supports only [`JsonMode::Json`].
 pub enum JsonMode {
     #[default]
+    /// Request JSON responses (`json=1`).
     Json,
+    /// Request plain-text responses (`json=0`).
     Plain,
 }
 
 #[derive(Debug, Clone, Default)]
+/// Optional parameters for the "send SMS" request.
+///
+/// These map to SMS.RU form fields; most are optional and default to "not set".
 pub struct SendOptions {
+    /// Response format requested from SMS.RU (defaults to JSON).
     pub json: JsonMode,
+    /// Sender id (`from=`). Must be enabled in your SMS.RU account.
     pub from: Option<SenderId>,
+    /// End user IP (`ip=`), used by SMS.RU for anti-fraud/limits in some modes.
     pub ip: Option<IpAddr>,
+    /// Scheduled send time as a unix timestamp in seconds (`time=`).
     pub time: Option<UnixTimestamp>,
+    /// Per-recipient TTL in minutes (`ttl=`). See [`TtlMinutes`] for range.
     pub ttl: Option<TtlMinutes>,
+    /// Send only during daytime (`daytime=1`).
     pub daytime: bool,
+    /// Transliterate message (`translit=1`).
     pub translit: bool,
+    /// Test mode (`test=1`): validate request without sending an SMS.
     pub test: bool,
+    /// Optional partner identifier (`partner_id=`).
     pub partner_id: Option<PartnerId>,
 }
 
 #[derive(Debug, Clone)]
+/// A validated "send SMS" request.
+///
+/// Use [`SendSms::to_many`] to send one message to many recipients, or
+/// [`SendSms::per_recipient`] to send per-recipient messages.
 pub enum SendSms {
+    /// One message to many recipients.
     ToMany(ToMany),
+    /// Different messages per recipient.
     PerRecipient(PerRecipient),
 }
 
 #[derive(Debug, Clone)]
+/// "One message to many recipients" request shape.
 pub struct ToMany {
     recipients: Vec<RawPhoneNumber>,
     msg: MessageText,
@@ -42,12 +67,18 @@ pub struct ToMany {
 }
 
 #[derive(Debug, Clone)]
+/// "Per-recipient message" request shape.
 pub struct PerRecipient {
     messages: BTreeMap<RawPhoneNumber, MessageText>,
     options: SendOptions,
 }
 
 impl SendSms {
+    /// Create a "one message to many recipients" request.
+    ///
+    /// Constraints:
+    /// - `recipients` must be non-empty
+    /// - `recipients.len()` must be `<= SEND_SMS_MAX_RECIPIENTS` (100)
     pub fn to_many(
         recipients: Vec<RawPhoneNumber>,
         msg: MessageText,
@@ -71,6 +102,11 @@ impl SendSms {
         }))
     }
 
+    /// Create a "per-recipient message" request.
+    ///
+    /// Constraints:
+    /// - `messages` must be non-empty
+    /// - `messages.len()` must be `<= SEND_SMS_MAX_RECIPIENTS` (100)
     pub fn per_recipient(
         messages: BTreeMap<RawPhoneNumber, MessageText>,
         options: SendOptions,
@@ -91,24 +127,29 @@ impl SendSms {
 }
 
 impl ToMany {
+    /// Recipient phone numbers as provided (not normalized).
     pub fn recipients(&self) -> &[RawPhoneNumber] {
         &self.recipients
     }
 
+    /// Message text (must be non-empty; see [`MessageText`]).
     pub fn msg(&self) -> &MessageText {
         &self.msg
     }
 
+    /// Request options.
     pub fn options(&self) -> &SendOptions {
         &self.options
     }
 }
 
 impl PerRecipient {
+    /// Per-recipient messages.
     pub fn messages(&self) -> &BTreeMap<RawPhoneNumber, MessageText> {
         &self.messages
     }
 
+    /// Request options.
     pub fn options(&self) -> &SendOptions {
         &self.options
     }

@@ -50,16 +50,24 @@ impl HttpTransport for ReqwestTransport {
 }
 
 #[derive(Debug, Clone)]
+/// Authentication credentials for SMS.RU API calls.
+///
+/// Use [`Auth::api_id`] when you have an `api_id` token, or [`Auth::login_password`]
+/// if you authenticate with a login/password pair.
 pub enum Auth {
+    /// Authenticate via SMS.RU `api_id`.
     ApiId(ApiId),
+    /// Authenticate via SMS.RU `login` + `password`.
     LoginPassword { login: Login, password: Password },
 }
 
 impl Auth {
+    /// Create [`Auth::ApiId`] and validate that the value is non-empty after trimming.
     pub fn api_id(value: impl Into<String>) -> Result<Self, ValidationError> {
         Ok(Self::ApiId(ApiId::new(value)?))
     }
 
+    /// Create [`Auth::LoginPassword`] and validate that both parts are non-empty.
     pub fn login_password(
         login: impl Into<String>,
         password: impl Into<String>,
@@ -84,30 +92,45 @@ impl Auth {
 }
 
 #[derive(Debug, thiserror::Error)]
+/// Errors returned by [`SmsRuClient`].
+///
+/// This error preserves:
+/// - HTTP-level failures (non-2xx status or transport failures),
+/// - API-level failures (top-level `status != OK`),
+/// - validation/parse failures.
 pub enum SmsRuError {
+    /// HTTP client / transport failure (DNS, TLS, timeouts, etc).
     #[error("transport error: {0}")]
     Transport(#[source] Box<dyn StdError + Send + Sync>),
 
+    /// Non-successful HTTP status code returned by the server.
     #[error("unexpected HTTP status: {status}")]
     HttpStatus { status: u16, body: Option<String> },
 
+    /// SMS.RU API returned an `ERROR` status with a status code/text.
     #[error("API error: {status_code:?} {status_text:?}")]
     Api {
         status_code: StatusCode,
         status_text: Option<String>,
     },
 
+    /// Response body could not be parsed as the expected format.
     #[error("parse error: {0}")]
     Parse(#[source] Box<dyn StdError + Send + Sync>),
 
+    /// The request asks for a response format that the client does not support.
     #[error("unsupported response format: {0}")]
     UnsupportedResponseFormat(&'static str),
 
+    /// One of the domain constructors rejected an invalid value.
     #[error("validation error: {0}")]
     Validation(#[from] ValidationError),
 }
 
 #[derive(Debug, Clone)]
+/// Builder for [`SmsRuClient`].
+///
+/// Use this when you need to customize the endpoint, timeout, or user-agent.
 pub struct SmsRuClientBuilder {
     auth: Auth,
     endpoint: String,
@@ -116,6 +139,7 @@ pub struct SmsRuClientBuilder {
 }
 
 impl SmsRuClientBuilder {
+    /// Create a builder with the default endpoint and no timeout/user-agent override.
     pub fn new(auth: Auth) -> Self {
         Self {
             auth,
@@ -125,21 +149,25 @@ impl SmsRuClientBuilder {
         }
     }
 
+    /// Override the SMS.RU endpoint URL.
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = endpoint.into();
         self
     }
 
+    /// Set an HTTP client timeout applied to the entire request.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
+    /// Override the HTTP `User-Agent` header.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
         self
     }
 
+    /// Build a [`SmsRuClient`].
     pub fn build(self) -> Result<SmsRuClient, SmsRuError> {
         let mut builder = reqwest::Client::builder();
         if let Some(timeout) = self.timeout {
@@ -162,6 +190,11 @@ impl SmsRuClientBuilder {
 }
 
 #[derive(Clone)]
+/// High-level SMS.RU client.
+///
+/// This type orchestrates request validation, form encoding, and response parsing.
+/// By default it uses the SMS.RU endpoint `https://sms.ru/sms/send` and expects JSON
+/// responses (`json=1`).
 pub struct SmsRuClient {
     auth: Auth,
     endpoint: String,
@@ -169,6 +202,9 @@ pub struct SmsRuClient {
 }
 
 impl SmsRuClient {
+    /// Create a client using the default endpoint.
+    ///
+    /// For more customization, use [`SmsRuClient::builder`].
     pub fn new(auth: Auth) -> Self {
         Self {
             auth,
@@ -179,10 +215,21 @@ impl SmsRuClient {
         }
     }
 
+    /// Start building a client with custom settings.
     pub fn builder(auth: Auth) -> SmsRuClientBuilder {
         SmsRuClientBuilder::new(auth)
     }
 
+    /// Send an SMS message through SMS.RU.
+    ///
+    /// Constraints:
+    /// - The request must have `SendOptions.json = JsonMode::Json` (plain-text responses are
+    ///   currently not supported).
+    ///
+    /// Errors:
+    /// - Returns [`SmsRuError::Validation`] for invalid domain values,
+    /// - [`SmsRuError::HttpStatus`] for non-2xx HTTP responses,
+    /// - [`SmsRuError::Api`] when SMS.RU returns a top-level `ERROR`.
     pub async fn send_sms(&self, request: SendSms) -> Result<SendSmsResponse, SmsRuError> {
         if request_options(&request).json != crate::domain::JsonMode::Json {
             return Err(SmsRuError::UnsupportedResponseFormat(
