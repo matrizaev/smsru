@@ -22,7 +22,7 @@
 
 pub mod client;
 pub mod domain;
-pub mod transport;
+mod transport;
 
 pub use client::{Auth, SmsRuClient, SmsRuClientBuilder, SmsRuError};
 pub use domain::{

@@ -2,6 +2,15 @@
 name = "smsru"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Typed Rust client for the SMS.RU HTTP API."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/matrizaev/smsru"
+homepage = "https://github.com/matrizaev/smsru"
+documentation = "https://docs.rs/smsru"
+keywords = ["sms", "smsru", "sms-ru", "api", "client"]
+categories = ["api-bindings"]
 
 [dependencies]
 phonenumber = "0.3"

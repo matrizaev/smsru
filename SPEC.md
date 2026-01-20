@@ -1,6 +1,6 @@
 # smsru crate – Specification
 
-This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for the SMS.RU HTTP API described in `smsru.pdf` (method: “Отправить СМС сообщение HTTP запросом”).
+This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for the SMS.RU HTTP API (method: "Send SMS message via HTTP request").
 
 ## Goals
 
