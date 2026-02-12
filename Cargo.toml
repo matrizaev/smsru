@@ -22,7 +22,7 @@ include = [
 
 [dependencies]
 phonenumber = "0.3"
-reqwest = { version = "0.13.1", default-features = false, features = [
+reqwest = { version = "0.13.2", default-features = false, features = [
     "form",
     "json",
     "rustls",
