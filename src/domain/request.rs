@@ -8,6 +8,8 @@ use crate::domain::value::{
 
 /// SMS.RU "send SMS" API limit: maximum number of recipients per request.
 pub const SEND_SMS_MAX_RECIPIENTS: usize = 100;
+/// SMS.RU "check cost" API limit: maximum number of recipients per request.
+pub const CHECK_COST_MAX_RECIPIENTS: usize = 100;
 /// SMS.RU "check status" API limit: maximum number of ids per request.
 pub const CHECK_STATUS_MAX_SMS_IDS: usize = 100;
 
@@ -48,6 +50,19 @@ pub struct SendOptions {
     pub partner_id: Option<PartnerId>,
 }
 
+#[derive(Debug, Clone, Default)]
+/// Optional parameters for the "check cost" request.
+///
+/// These map to SMS.RU form fields supported by `sms/cost`.
+pub struct CheckCostOptions {
+    /// Response format requested from SMS.RU (defaults to JSON).
+    pub json: JsonMode,
+    /// Sender id (`from=`). Must be enabled in your SMS.RU account.
+    pub from: Option<SenderId>,
+    /// Transliterate message (`translit=1`).
+    pub translit: bool,
+}
+
 #[derive(Debug, Clone)]
 /// A validated "send SMS" request.
 ///
@@ -73,6 +88,33 @@ pub struct ToMany {
 pub struct PerRecipient {
     messages: BTreeMap<RawPhoneNumber, MessageText>,
     options: SendOptions,
+}
+
+#[derive(Debug, Clone)]
+/// A validated "check cost" request.
+///
+/// Use [`CheckCost::to_many`] to estimate one message for many recipients, or
+/// [`CheckCost::per_recipient`] to estimate per-recipient messages.
+pub enum CheckCost {
+    /// One message to many recipients.
+    ToMany(CostToMany),
+    /// Different messages per recipient.
+    PerRecipient(CostPerRecipient),
+}
+
+#[derive(Debug, Clone)]
+/// "One message to many recipients" request shape for `sms/cost`.
+pub struct CostToMany {
+    recipients: Vec<RawPhoneNumber>,
+    msg: MessageText,
+    options: CheckCostOptions,
+}
+
+#[derive(Debug, Clone)]
+/// "Per-recipient message" request shape for `sms/cost`.
+pub struct CostPerRecipient {
+    messages: BTreeMap<RawPhoneNumber, MessageText>,
+    options: CheckCostOptions,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +178,59 @@ impl SendSms {
     }
 }
 
+impl CheckCost {
+    /// Create a "one message to many recipients" cost request.
+    ///
+    /// Constraints:
+    /// - `recipients` must be non-empty
+    /// - `recipients.len()` must be `<= CHECK_COST_MAX_RECIPIENTS` (100)
+    pub fn to_many(
+        recipients: Vec<RawPhoneNumber>,
+        msg: MessageText,
+        options: CheckCostOptions,
+    ) -> Result<Self, ValidationError> {
+        if recipients.is_empty() {
+            return Err(ValidationError::Empty {
+                field: RawPhoneNumber::FIELD,
+            });
+        }
+        if recipients.len() > CHECK_COST_MAX_RECIPIENTS {
+            return Err(ValidationError::TooManyRecipients {
+                max: CHECK_COST_MAX_RECIPIENTS,
+                actual: recipients.len(),
+            });
+        }
+        Ok(Self::ToMany(CostToMany {
+            recipients,
+            msg,
+            options,
+        }))
+    }
+
+    /// Create a "per-recipient message" cost request.
+    ///
+    /// Constraints:
+    /// - `messages` must be non-empty
+    /// - `messages.len()` must be `<= CHECK_COST_MAX_RECIPIENTS` (100)
+    pub fn per_recipient(
+        messages: BTreeMap<RawPhoneNumber, MessageText>,
+        options: CheckCostOptions,
+    ) -> Result<Self, ValidationError> {
+        if messages.is_empty() {
+            return Err(ValidationError::Empty {
+                field: RawPhoneNumber::FIELD,
+            });
+        }
+        if messages.len() > CHECK_COST_MAX_RECIPIENTS {
+            return Err(ValidationError::TooManyRecipients {
+                max: CHECK_COST_MAX_RECIPIENTS,
+                actual: messages.len(),
+            });
+        }
+        Ok(Self::PerRecipient(CostPerRecipient { messages, options }))
+    }
+}
+
 impl ToMany {
     /// Recipient phone numbers as provided (not normalized).
     pub fn recipients(&self) -> &[RawPhoneNumber] {
@@ -161,6 +256,35 @@ impl PerRecipient {
 
     /// Request options.
     pub fn options(&self) -> &SendOptions {
+        &self.options
+    }
+}
+
+impl CostToMany {
+    /// Recipient phone numbers as provided (not normalized).
+    pub fn recipients(&self) -> &[RawPhoneNumber] {
+        &self.recipients
+    }
+
+    /// Message text (must be non-empty; see [`MessageText`]).
+    pub fn msg(&self) -> &MessageText {
+        &self.msg
+    }
+
+    /// Request options.
+    pub fn options(&self) -> &CheckCostOptions {
+        &self.options
+    }
+}
+
+impl CostPerRecipient {
+    /// Per-recipient messages.
+    pub fn messages(&self) -> &BTreeMap<RawPhoneNumber, MessageText> {
+        &self.messages
+    }
+
+    /// Request options.
+    pub fn options(&self) -> &CheckCostOptions {
         &self.options
     }
 }
@@ -297,6 +421,98 @@ mod tests {
                 assert_eq!(per_recipient.options().json, options.json);
             }
             SendSms::ToMany(_) => panic!("expected per_recipient request"),
+        }
+    }
+
+    #[test]
+    fn check_cost_to_many_rejects_empty_recipients() {
+        let msg = MessageText::new("hi").unwrap();
+        let err = CheckCost::to_many(Vec::new(), msg, CheckCostOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::Empty {
+                field: RawPhoneNumber::FIELD
+            }
+        );
+    }
+
+    #[test]
+    fn check_cost_to_many_rejects_too_many_recipients() {
+        let msg = MessageText::new("hi").unwrap();
+        let recipients = make_recipients(CHECK_COST_MAX_RECIPIENTS + 1);
+        let err = CheckCost::to_many(recipients, msg, CheckCostOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::TooManyRecipients {
+                max: CHECK_COST_MAX_RECIPIENTS,
+                actual: CHECK_COST_MAX_RECIPIENTS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn check_cost_per_recipient_rejects_empty_messages() {
+        let err =
+            CheckCost::per_recipient(BTreeMap::new(), CheckCostOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::Empty {
+                field: RawPhoneNumber::FIELD
+            }
+        );
+    }
+
+    #[test]
+    fn check_cost_per_recipient_rejects_too_many_messages() {
+        let mut messages = BTreeMap::new();
+        for idx in 0..(CHECK_COST_MAX_RECIPIENTS + 1) {
+            messages.insert(
+                RawPhoneNumber::new(format!("+792512330{idx:02}")).unwrap(),
+                MessageText::new("hi").unwrap(),
+            );
+        }
+        let err = CheckCost::per_recipient(messages, CheckCostOptions::default()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::TooManyRecipients {
+                max: CHECK_COST_MAX_RECIPIENTS,
+                actual: CHECK_COST_MAX_RECIPIENTS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn check_cost_to_many_exposes_fields() {
+        let recipients = make_recipients(2);
+        let msg = MessageText::new("hello").unwrap();
+        let options = CheckCostOptions::default();
+        let req = CheckCost::to_many(recipients.clone(), msg.clone(), options.clone()).unwrap();
+
+        match req {
+            CheckCost::ToMany(to_many) => {
+                assert_eq!(to_many.recipients(), recipients.as_slice());
+                assert_eq!(to_many.msg(), &msg);
+                assert_eq!(to_many.options().json, options.json);
+            }
+            CheckCost::PerRecipient(_) => panic!("expected to_many request"),
+        }
+    }
+
+    #[test]
+    fn check_cost_per_recipient_exposes_fields() {
+        let mut messages = BTreeMap::new();
+        let p1 = RawPhoneNumber::new("+79251234567").unwrap();
+        let msg = MessageText::new("hello").unwrap();
+        messages.insert(p1.clone(), msg.clone());
+        let options = CheckCostOptions::default();
+
+        let req = CheckCost::per_recipient(messages.clone(), options.clone()).unwrap();
+        match req {
+            CheckCost::PerRecipient(per_recipient) => {
+                assert_eq!(per_recipient.messages(), &messages);
+                assert_eq!(per_recipient.options().json, options.json);
+            }
+            CheckCost::ToMany(_) => panic!("expected per_recipient request"),
         }
     }
 

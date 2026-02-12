@@ -1,6 +1,6 @@
 # smsru
 
-Typed Rust client for the SMS.RU HTTP API (`sms/send`, `sms/status`).
+Typed Rust client for the SMS.RU HTTP API (`sms/send`, `sms/cost`, `sms/status`).
 
 This crate focuses on a small, explicit public API: strong domain types for inputs and a client that handles JSON responses. Transport details are internal and not exposed as public modules.
 
@@ -38,12 +38,15 @@ println!("status: {:?} code: {:?}", response.status, response.status_code);
 
 - One message to many recipients: `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
 - Per-recipient messages: `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
+- Check message cost before sending:
+  - `CheckCost::to_many(Vec<RawPhoneNumber>, MessageText, CheckCostOptions)`
+  - `CheckCost::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, CheckCostOptions)`
 - Check status by message ids: `CheckStatus::new(Vec<SmsId>)` / `CheckStatus::one(SmsId)`
 
 ```rust,no_run
 use std::collections::BTreeMap;
 
-use smsru::{MessageText, RawPhoneNumber, SendOptions, SendSms};
+use smsru::{CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SendOptions, SendSms};
 
 fn build() -> Result<SendSms, smsru::ValidationError> {
 let mut messages = BTreeMap::new();
@@ -52,6 +55,14 @@ messages.insert(
     MessageText::new("hello")?,
 );
 Ok(SendSms::per_recipient(messages, SendOptions::default())?)
+}
+
+fn build_cost() -> Result<CheckCost, smsru::ValidationError> {
+CheckCost::to_many(
+    vec![RawPhoneNumber::new("+79251234567")?],
+    MessageText::new("hello")?,
+    CheckCostOptions::default(),
+)
 }
 ```
 
@@ -76,9 +87,31 @@ CheckStatus::new(ids)
 
 Use `SmsRuClient::builder(auth)` to configure `timeout`, `user_agent`, and endpoints:
 
-- `endpoint(...)`: set both `sms/send` and `sms/status` endpoint URLs
+- `endpoint(...)`: set `sms/send`, `sms/cost`, and `sms/status` endpoint URLs
 - `send_endpoint(...)`: set only `sms/send` URL
+- `cost_endpoint(...)`: set only `sms/cost` URL
 - `status_endpoint(...)`: set only `sms/status` URL
+
+## Check cost example
+
+```rust,no_run
+use smsru::{Auth, CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SmsRuClient};
+
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let request = CheckCost::to_many(
+    vec![RawPhoneNumber::new("+79251234567")?],
+    MessageText::new("hello")?,
+    CheckCostOptions::default(),
+)?;
+let response = client.check_cost(request).await?;
+println!(
+    "status: {:?} code: {:?} total_cost: {:?}",
+    response.status, response.status_code, response.total_cost
+);
+# Ok(())
+# }
+```
 
 ## Check status example
 

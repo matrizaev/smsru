@@ -7,9 +7,13 @@ mod value;
 
 pub use request::JsonMode;
 pub use request::{
-    CHECK_STATUS_MAX_SMS_IDS, CheckStatus, SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms,
+    CHECK_COST_MAX_RECIPIENTS, CHECK_STATUS_MAX_SMS_IDS, CheckCost, CheckCostOptions, CheckStatus,
+    SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms,
 };
-pub use response::{CheckStatusResponse, SendSmsResponse, SmsResult, SmsStatusResult, Status};
+pub use response::{
+    CheckCostResponse, CheckStatusResponse, SendSmsResponse, SmsCostResult, SmsResult,
+    SmsStatusResult, Status,
+};
 pub use validation::ValidationError;
 pub use value::{
     ApiId, KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
@@ -81,6 +85,15 @@ mod tests {
                 field: RawPhoneNumber::FIELD
             }
         ));
+    }
+
+    #[test]
+    fn check_cost_recipient_limit_is_enforced() {
+        let pn = RawPhoneNumber::new("79251234567").unwrap();
+        let msg = MessageText::new("hi").unwrap();
+        let recipients = vec![pn; CHECK_COST_MAX_RECIPIENTS + 1];
+        let err = CheckCost::to_many(recipients, msg, CheckCostOptions::default()).unwrap_err();
+        assert!(matches!(err, ValidationError::TooManyRecipients { .. }));
     }
 
     #[test]

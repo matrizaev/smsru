@@ -7,7 +7,8 @@
 //!
 //! ```rust,no_run
 //! use smsru::{
-//!     Auth, CheckStatus, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsId, SmsRuClient,
+//!     Auth, CheckStatus, CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SendOptions,
+//!     SendSms, SmsId, SmsRuClient,
 //! };
 //!
 //! #[tokio::main]
@@ -21,6 +22,13 @@
 //!
 //!     let status_req = CheckStatus::one(SmsId::new("000000-000001")?);
 //!     let _status = client.check_status(status_req).await?;
+//!
+//!     let cost_req = CheckCost::to_many(
+//!         vec![RawPhoneNumber::new("+79251234567")?],
+//!         MessageText::new("hello")?,
+//!         CheckCostOptions::default(),
+//!     )?;
+//!     let _cost = client.check_cost(cost_req).await?;
 //!     Ok(())
 //! }
 //! ```
@@ -32,8 +40,8 @@ mod transport;
 
 pub use client::{Auth, SmsRuClient, SmsRuClientBuilder, SmsRuError};
 pub use domain::{
-    ApiId, CheckStatus, CheckStatusResponse, JsonMode, KnownStatusCode, Login, MessageText,
-    PartnerId, Password, PhoneNumber, RawPhoneNumber, SendOptions, SendSms, SendSmsResponse,
-    SenderId, SmsId, SmsResult, SmsStatusResult, Status, StatusCode, TtlMinutes, UnixTimestamp,
-    ValidationError,
+    ApiId, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus, CheckStatusResponse,
+    JsonMode, KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber,
+    RawPhoneNumber, SendOptions, SendSms, SendSmsResponse, SenderId, SmsCostResult, SmsId,
+    SmsResult, SmsStatusResult, Status, StatusCode, TtlMinutes, UnixTimestamp, ValidationError,
 };

@@ -60,6 +60,26 @@ pub struct CheckStatusResponse {
     pub sms: BTreeMap<SmsId, SmsStatusResult>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+/// Parsed response from the SMS.RU "check cost" API.
+///
+/// When using [`crate::client::SmsRuClient`], API-level failures (`status != OK`) are returned as
+/// [`crate::SmsRuError::Api`] instead of a `CheckCostResponse`.
+pub struct CheckCostResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Total request cost as returned by SMS.RU.
+    pub total_cost: Option<String>,
+    /// Total number of SMS segments as returned by SMS.RU.
+    pub total_sms: Option<u32>,
+    /// Per-recipient cost results keyed by phone number.
+    pub sms: BTreeMap<RawPhoneNumber, SmsCostResult>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Result for a single sms id in the SMS.RU status response.
 pub struct SmsStatusResult {
@@ -71,4 +91,19 @@ pub struct SmsStatusResult {
     pub status_text: Option<String>,
     /// Optional message cost as returned by SMS.RU.
     pub cost: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Result for a single recipient in the SMS.RU cost response.
+pub struct SmsCostResult {
+    /// Per-recipient status.
+    pub status: Status,
+    /// Per-recipient status code.
+    pub status_code: StatusCode,
+    /// Optional per-recipient status text.
+    pub status_text: Option<String>,
+    /// Optional per-recipient message cost.
+    pub cost: Option<String>,
+    /// Optional per-recipient SMS segment count.
+    pub sms: Option<u32>,
 }
