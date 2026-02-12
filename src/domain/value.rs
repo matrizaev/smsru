@@ -157,6 +157,32 @@ impl MessageText {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// SMS.RU message id (`sms_id`) returned by `sms/send`.
+///
+/// Invariant: non-empty after trimming.
+pub struct SmsId(String);
+
+impl SmsId {
+    /// Form field name used by SMS.RU (`sms_id`).
+    pub const FIELD: &'static str = "sms_id";
+
+    /// Create a validated [`SmsId`].
+    pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let value = value.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ValidationError::Empty { field: Self::FIELD });
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    /// Borrow the validated sms id.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// Unvalidated phone number as sent to SMS.RU (`to`).
 ///
 /// Invariant: non-empty after trimming. This type does not normalize; if you want E.164
@@ -539,6 +565,10 @@ mod tests {
         let msg = MessageText::new(" hi ").unwrap();
         assert_eq!(msg.as_str(), " hi ");
         assert!(MessageText::new("  ").is_err());
+
+        let sms_id = SmsId::new(" 000000-000001 ").unwrap();
+        assert_eq!(sms_id.as_str(), "000000-000001");
+        assert!(SmsId::new("  ").is_err());
     }
 
     #[test]

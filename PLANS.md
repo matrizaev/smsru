@@ -1,108 +1,80 @@
 # Implementation plan
 
-This plan implements the `smsru` crate per `SPEC.md`.
+This plan extends the crate with SMS.RU message status checks (`sms/status`) based on `SPEC.md` and `Проверить статус отправленных сообщений.pdf`.
+
+## Implementation status
+
+- M1: completed
+- M2: completed
+- M3: completed
+- M4: completed
+- M5: completed
+
+## Scope
+
+- Add a typed request/response API for `https://sms.ru/sms/status`.
+- Keep existing `sms/send` behavior stable.
+- Preserve DDD layering: `domain` (types/invariants), `transport` (wire format), `client` (orchestration).
 
 ## Milestones
 
-### M0 — Project scaffolding
+### M1 - Domain model for status checks
 
-- Replace placeholder code in `src/lib.rs` with crate module layout.
-- Add dependencies (initial):
-  - `serde`, `serde_json`
-  - `reqwest` (likely with `json`, `rustls-tls`)
-  - `thiserror`
-  - `phonenumber` (optional: parse/validate/normalize numbers for opt-in E.164 APIs)
-  - `url` (optional; only if needed)
-- Add crate-level docs with a short example.
-- Acceptance: `cargo test` passes, `cargo fmt` clean.
+- Add `SmsId` newtype (non-empty after trimming).
+- Add `CheckStatus` request model with constructors:
+  - `CheckStatus::new(Vec<SmsId>)`
+  - `CheckStatus::one(SmsId)`
+- Add limit constant for status checks: max `100` ids per request.
+- Add response types:
+  - `CheckStatusResponse`
+  - `SmsStatusResult` (`status`, `status_code`, `status_text`, `cost`)
+- Extend `ValidationError` with status-check-specific variants if needed (`TooManySmsIds`, etc.).
+- Acceptance:
+  - Unit tests cover constructors, limits, and validation failures.
 
-### M1 — Domain layer (strong types + invariants)
+### M2 - Transport encoding/decoding for `sms/status`
 
-Create `src/domain/` with:
+- Add transport encoder for form parameters:
+  - `sms_id` as comma-separated ids
+  - `json=1`
+- Add transport decoder for JSON responses:
+  - Top-level: `status`, `status_code`, optional `status_text`, optional `balance`, `sms`
+  - Per id: `status`, `status_code`, optional `status_text`, optional `cost`
+- Preserve unknown fields and optional fields via `serde` defaults.
+- Normalize numeric/string money values into `Option<String>` for `cost` and `balance`.
+- Acceptance:
+  - Unit tests for form encoding and JSON fixtures (OK + ERROR + partial per-id failures).
 
-- Newtypes with validation:
-  - `ApiId`, `Login`, `Password`
-  - `PhoneNumber` (opt-in E.164 normalization backed by `phonenumber`; region handling must be explicit)
-  - `RawPhoneNumber` (opaque string wrapper for the default pass-through behavior)
-  - `MessageText` (UTF-8 implied; validate non-empty and max length policy if desired)
-  - `SenderId` (optional)
-  - `UnixTimestamp`, `TtlMinutes`
-  - `PartnerId`
-- Core request model:
-  - `SendSms` enum: `ToMany { recipients, msg, options }` vs `PerRecipient { messages, options }`
-  - `SendOptions` struct: `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
-- Response model:
-  - `SendSmsResponse`, `SmsResult`
-  - `Status` enum (`Ok`/`Error`)
-  - `StatusCode(i32)` newtype + `KnownStatusCode` (non-exhaustive) + helpers (`known_kind`, optional `is_retryable`)
-  - `balance: Option<String>` (preserve exact API formatting; no floats in the public model)
-- Acceptance: unit tests for constructors/validation; no transport code yet.
+### M3 - Client API integration
 
-### M2 — Transport layer (wire format + serde models)
+- Add `SmsRuClient::check_status(request) -> Result<CheckStatusResponse, SmsRuError>`.
+- Add default status endpoint constant: `https://sms.ru/sms/status`.
+- Extend builder config to support status endpoint override (while keeping current send configuration backward-compatible).
+- Reuse existing error mapping strategy:
+  - non-2xx -> `SmsRuError::HttpStatus`
+  - parse issues -> `SmsRuError::Parse`
+  - top-level `status != OK` -> `SmsRuError::Api`
+- Acceptance:
+  - Client tests with mocked transport verify request params and error mapping.
 
-Create `src/transport/` with:
+### M4 - Public exports and docs
 
-- Request encoding:
-  - Serialize `SendSms` into `application/x-www-form-urlencoded` parameters.
-  - Implement `to` as comma-separated list for `ToMany`.
-  - Implement `to[PHONE]=TEXT` expansion for `PerRecipient`.
-  - Always include `json=1` by default.
-- Response decoding:
-  - `serde` structs mirroring SMS.RU JSON schema (`status`, `status_code`, `sms`, `balance`, optional `status_text`).
-  - Use `#[serde(default)]` for optional fields; allow unknown fields (no `deny_unknown_fields`).
-  - Convert transport structs into domain response types.
-- Acceptance: unit tests for parameter encoding and JSON parsing fixtures.
+- Re-export new public types from `src/lib.rs`.
+- Update crate docs and README with a status-check example.
+- Keep `SPEC.md` and API docs consistent with implemented names.
+- Acceptance:
+  - Doctests/examples compile (`no_run` is acceptable).
 
-### M3 — Client layer (public API)
+### M5 - Quality gates
 
-Create `src/client/` with:
+- Run `cargo fmt`.
+- Run `cargo clippy --all-targets --all-features` and fix warnings (no blanket `allow`).
+- Run `cargo test`.
+- Acceptance:
+  - All checks pass without network-dependent tests.
 
-- `Auth` enum:
-  - `ApiId(ApiId)` or `LoginPassword { login: Login, password: Password }`
-- `SmsRuClient`:
-  - `new(auth)` using an internal `reqwest` client (not exposed in public signatures)
-  - optional `SmsRuClientBuilder`/config API for timeouts, user-agent, etc. (crate-owned types only)
-  - `send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
-- Error type `SmsRuError`:
-  - `Transport` (HTTP errors / timeouts)
-  - `HttpStatus { status: u16, body: Option<String> }` (non-2xx response)
-  - `Api { status_code, status_text }`
-  - `Parse` (invalid JSON / schema drift)
-  - `Validation` (failed construction / invalid inputs)
-- Acceptance: integration-style tests using mocked HTTP (no real network).
+## Risks and decisions
 
-### M4 — Status codes and ergonomics
-
-- Provide a list/enum of known `StatusCode` values with readable helpers:
-  - `is_retryable()`, `is_auth_error()`, etc. (keep minimal initially)
-- Ensure unknown codes are preserved (forward compatible).
-- Add convenience constructors:
-  - `SendSms::to_many(...)`
-  - `SendSms::per_recipient(...)`
-- Acceptance: doc examples compile; clippy clean.
-
-### M5 — Documentation and release readiness
-
-- Ensure `SPEC.md` stays consistent with implemented API.
-- Add `README.md` (if desired) with quickstart.
-- Add a `CHANGELOG.md` entry for `0.1.0` if releasing.
-- Acceptance: `cargo doc` renders cleanly; examples run as doctests (optional).
-
-## Module layout (proposed)
-
-- `src/lib.rs` — re-exports + top-level docs
-- `src/domain/` — strong types + domain requests/responses
-- `src/transport/` — wire-format encoding/decoding
-- `src/client/` — `SmsRuClient`, `Auth`, `SmsRuError`
-
-## Testing strategy
-
-- Domain: unit tests for newtype validation and invariants.
-- Transport: golden tests for form encoding; JSON fixtures for parsing.
-- Client: HTTP mocking (e.g., `wiremock` or `httpmock`) to validate request/response mapping without network.
-
-## Open decisions (resolve before locking public API)
-
-- Sync vs async: async-only first, or provide `blocking` behind a feature.
-- Phone number API shape: keep default pass-through (`RawPhoneNumber`) and define the opt-in E.164 parsing API (including explicit region input when needed).
-- `MessageText` length rules: enforce “<= 8 SMS parts” as a soft validation or leave to server.
+- Endpoint configuration was split into method-specific fields (`send_endpoint`, `status_endpoint`) while keeping `endpoint(...)` for backward compatibility.
+- SMS.RU may return money values as numbers; public API should preserve exact text (`String`) to avoid precision loss.
+- Unknown `sms` map keys in status response should be treated predictably (explicit parse/transport error, not silent drop).

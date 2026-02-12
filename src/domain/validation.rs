@@ -4,6 +4,7 @@ use std::fmt;
 pub enum ValidationError {
     Empty { field: &'static str },
     TooManyRecipients { max: usize, actual: usize },
+    TooManySmsIds { max: usize, actual: usize },
     InvalidPhoneNumber { input: String },
     TtlOutOfRange { min: u16, max: u16, actual: u16 },
 }
@@ -14,6 +15,9 @@ impl fmt::Display for ValidationError {
             Self::Empty { field } => write!(f, "{field} must not be empty"),
             Self::TooManyRecipients { max, actual } => {
                 write!(f, "too many recipients: {actual} (max {max})")
+            }
+            Self::TooManySmsIds { max, actual } => {
+                write!(f, "too many sms ids: {actual} (max {max})")
             }
             Self::InvalidPhoneNumber { input } => write!(f, "invalid phone number: {input}"),
             Self::TtlOutOfRange { min, max, actual } => {
@@ -39,6 +43,9 @@ mod tests {
 
         let err = ValidationError::TooManyRecipients { max: 2, actual: 3 };
         assert_eq!(err.to_string(), "too many recipients: 3 (max 2)");
+
+        let err = ValidationError::TooManySmsIds { max: 2, actual: 3 };
+        assert_eq!(err.to_string(), "too many sms ids: 3 (max 2)");
 
         let err = ValidationError::InvalidPhoneNumber {
             input: "bad".to_owned(),

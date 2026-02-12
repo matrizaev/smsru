@@ -1,6 +1,6 @@
 # smsru
 
-Typed Rust client for the SMS.RU HTTP API (`sms/send`).
+Typed Rust client for the SMS.RU HTTP API (`sms/send`, `sms/status`).
 
 This crate focuses on a small, explicit public API: strong domain types for inputs and a client that handles JSON responses. Transport details are internal and not exposed as public modules.
 
@@ -38,6 +38,7 @@ println!("status: {:?} code: {:?}", response.status, response.status_code);
 
 - One message to many recipients: `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
 - Per-recipient messages: `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
+- Check status by message ids: `CheckStatus::new(Vec<SmsId>)` / `CheckStatus::one(SmsId)`
 
 ```rust,no_run
 use std::collections::BTreeMap;
@@ -54,6 +55,18 @@ Ok(SendSms::per_recipient(messages, SendOptions::default())?)
 }
 ```
 
+```rust,no_run
+use smsru::{CheckStatus, SmsId};
+
+fn build_status() -> Result<CheckStatus, smsru::ValidationError> {
+let ids = vec![
+    SmsId::new("000000-000001")?,
+    SmsId::new("000000-000002")?,
+];
+CheckStatus::new(ids)
+}
+```
+
 ## Phone numbers
 
 - `RawPhoneNumber` preserves input as-is after trimming whitespace.
@@ -61,7 +74,31 @@ Ok(SendSms::per_recipient(messages, SendOptions::default())?)
 
 ## Client configuration
 
-Use `SmsRuClient::builder(auth)` to configure `endpoint`, `timeout`, and `user_agent`.
+Use `SmsRuClient::builder(auth)` to configure `timeout`, `user_agent`, and endpoints:
+
+- `endpoint(...)`: set both `sms/send` and `sms/status` endpoint URLs
+- `send_endpoint(...)`: set only `sms/send` URL
+- `status_endpoint(...)`: set only `sms/status` URL
+
+## Check status example
+
+```rust,no_run
+use smsru::{Auth, CheckStatus, SmsId, SmsRuClient};
+
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let request = CheckStatus::new(vec![
+    SmsId::new("000000-000001")?,
+    SmsId::new("000000-000002")?,
+])?;
+let response = client.check_status(request).await?;
+
+for (sms_id, result) in response.sms {
+    println!("{sms_id:?}: {:?} {:?}", result.status, result.status_code);
+}
+# Ok(())
+# }
+```
 
 ## Responses and status codes
 
