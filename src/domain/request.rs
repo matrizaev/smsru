@@ -3,7 +3,8 @@ use std::net::IpAddr;
 
 use crate::domain::validation::ValidationError;
 use crate::domain::value::{
-    CallCheckId, MessageText, PartnerId, RawPhoneNumber, SenderId, SmsId, TtlMinutes, UnixTimestamp,
+    CallCheckId, CallbackUrl, MessageText, PartnerId, RawPhoneNumber, SenderId, SmsId,
+    StoplistText, TtlMinutes, UnixTimestamp,
 };
 
 /// SMS.RU "send SMS" API limit: maximum number of recipients per request.
@@ -151,6 +152,31 @@ pub struct StartCallAuth {
 pub struct CheckCallAuthStatus {
     check_id: CallCheckId,
     options: CheckCallAuthStatusOptions,
+}
+
+#[derive(Debug, Clone)]
+/// A validated request for adding a number to stoplist.
+pub struct AddStoplistEntry {
+    phone: RawPhoneNumber,
+    text: StoplistText,
+}
+
+#[derive(Debug, Clone)]
+/// A validated request for removing a number from stoplist.
+pub struct RemoveStoplistEntry {
+    phone: RawPhoneNumber,
+}
+
+#[derive(Debug, Clone)]
+/// A validated request for adding callback URL.
+pub struct AddCallback {
+    url: CallbackUrl,
+}
+
+#[derive(Debug, Clone)]
+/// A validated request for removing callback URL.
+pub struct RemoveCallback {
+    url: CallbackUrl,
 }
 
 impl SendSms {
@@ -382,6 +408,59 @@ impl CheckCallAuthStatus {
     /// Request options.
     pub fn options(&self) -> &CheckCallAuthStatusOptions {
         &self.options
+    }
+}
+
+impl AddStoplistEntry {
+    /// Create an "add stoplist entry" request.
+    pub fn new(phone: RawPhoneNumber, text: StoplistText) -> Self {
+        Self { phone, text }
+    }
+
+    /// Phone number to add to stoplist.
+    pub fn phone(&self) -> &RawPhoneNumber {
+        &self.phone
+    }
+
+    /// Human-readable note for this stoplist entry.
+    pub fn text(&self) -> &StoplistText {
+        &self.text
+    }
+}
+
+impl RemoveStoplistEntry {
+    /// Create a "remove stoplist entry" request.
+    pub fn new(phone: RawPhoneNumber) -> Self {
+        Self { phone }
+    }
+
+    /// Phone number to remove from stoplist.
+    pub fn phone(&self) -> &RawPhoneNumber {
+        &self.phone
+    }
+}
+
+impl AddCallback {
+    /// Create an "add callback URL" request.
+    pub fn new(url: CallbackUrl) -> Self {
+        Self { url }
+    }
+
+    /// Callback URL to add.
+    pub fn url(&self) -> &CallbackUrl {
+        &self.url
+    }
+}
+
+impl RemoveCallback {
+    /// Create a "remove callback URL" request.
+    pub fn new(url: CallbackUrl) -> Self {
+        Self { url }
+    }
+
+    /// Callback URL to remove.
+    pub fn url(&self) -> &CallbackUrl {
+        &self.url
     }
 }
 
@@ -636,5 +715,35 @@ mod tests {
             CheckCallAuthStatus::new(check_id.clone(), CheckCallAuthStatusOptions::default());
         assert_eq!(request.check_id(), &check_id);
         assert_eq!(request.options().json, JsonMode::Json);
+    }
+
+    #[test]
+    fn add_stoplist_entry_exposes_fields() {
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let text = StoplistText::new("fraud").unwrap();
+        let request = AddStoplistEntry::new(phone.clone(), text.clone());
+        assert_eq!(request.phone(), &phone);
+        assert_eq!(request.text(), &text);
+    }
+
+    #[test]
+    fn remove_stoplist_entry_exposes_fields() {
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let request = RemoveStoplistEntry::new(phone.clone());
+        assert_eq!(request.phone(), &phone);
+    }
+
+    #[test]
+    fn add_callback_exposes_fields() {
+        let url = CallbackUrl::new("https://example.com/callback").unwrap();
+        let request = AddCallback::new(url.clone());
+        assert_eq!(request.url(), &url);
+    }
+
+    #[test]
+    fn remove_callback_exposes_fields() {
+        let url = CallbackUrl::new("https://example.com/callback").unwrap();
+        let request = RemoveCallback::new(url.clone());
+        assert_eq!(request.url(), &url);
     }
 }

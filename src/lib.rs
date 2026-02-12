@@ -1,7 +1,6 @@
 //! Typed Rust client for the SMS.RU HTTP API.
 //!
-//! This crate is implemented in milestones (see `PLANS.md`). The public API is
-//! still evolving, but the design follows `SPEC.md`: a domain layer of strong
+//! The design follows `SPEC.md`: a domain layer of strong
 //! types, a transport layer for wire-format quirks, and a small client layer
 //! orchestrating requests.
 //!
@@ -40,11 +39,13 @@ mod transport;
 
 pub use client::{Auth, SmsRuClient, SmsRuClientBuilder, SmsRuError};
 pub use domain::{
-    ApiId, CallCheckId, CallCheckStatusCode, CheckCallAuthStatus, CheckCallAuthStatusOptions,
+    AddCallback, AddStoplistEntry, ApiId, BalanceResponse, CallCheckId, CallCheckStatusCode,
+    CallbackUrl, CallbacksResponse, CheckCallAuthStatus, CheckCallAuthStatusOptions,
     CheckCallAuthStatusResponse, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus,
-    CheckStatusResponse, JsonMode, KnownCallCheckStatusCode, KnownStatusCode, Login, MessageText,
-    PartnerId, Password, PhoneNumber, RawPhoneNumber, SendOptions, SendSms, SendSmsResponse,
-    SenderId, SmsCostResult, SmsId, SmsResult, SmsStatusResult, StartCallAuth,
-    StartCallAuthOptions, StartCallAuthResponse, Status, StatusCode, TtlMinutes, UnixTimestamp,
-    ValidationError,
+    CheckStatusResponse, FreeUsageResponse, JsonMode, KnownCallCheckStatusCode, KnownStatusCode,
+    LimitUsageResponse, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
+    RemoveCallback, RemoveStoplistEntry, SendOptions, SendSms, SendSmsResponse, SenderId,
+    SendersResponse, SmsCostResult, SmsId, SmsResult, SmsStatusResult, StartCallAuth,
+    StartCallAuthOptions, StartCallAuthResponse, Status, StatusCode, StatusOnlyResponse,
+    StoplistResponse, StoplistText, TtlMinutes, UnixTimestamp, ValidationError,
 };

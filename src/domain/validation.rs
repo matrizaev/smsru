@@ -6,6 +6,7 @@ pub enum ValidationError {
     TooManyRecipients { max: usize, actual: usize },
     TooManySmsIds { max: usize, actual: usize },
     InvalidPhoneNumber { input: String },
+    InvalidCallbackUrl { input: String },
     TtlOutOfRange { min: u16, max: u16, actual: u16 },
 }
 
@@ -20,6 +21,7 @@ impl fmt::Display for ValidationError {
                 write!(f, "too many sms ids: {actual} (max {max})")
             }
             Self::InvalidPhoneNumber { input } => write!(f, "invalid phone number: {input}"),
+            Self::InvalidCallbackUrl { input } => write!(f, "invalid callback url: {input}"),
             Self::TtlOutOfRange { min, max, actual } => {
                 write!(
                     f,
@@ -51,6 +53,11 @@ mod tests {
             input: "bad".to_owned(),
         };
         assert_eq!(err.to_string(), "invalid phone number: bad");
+
+        let err = ValidationError::InvalidCallbackUrl {
+            input: "bad-url".to_owned(),
+        };
+        assert_eq!(err.to_string(), "invalid callback url: bad-url");
 
         let err = ValidationError::TtlOutOfRange {
             min: 1,

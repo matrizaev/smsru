@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::domain::value::{CallCheckId, CallCheckStatusCode, RawPhoneNumber, SmsId, StatusCode};
+use crate::domain::value::{
+    CallCheckId, CallCheckStatusCode, CallbackUrl, RawPhoneNumber, SmsId, StatusCode,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Top-level status marker used by SMS.RU responses.
@@ -146,4 +148,100 @@ pub struct CheckCallAuthStatusResponse {
     pub check_status: Option<CallCheckStatusCode>,
     /// Optional call-check status description.
     pub check_status_text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from methods that only return top-level status fields.
+///
+/// This shape is used by `auth/check` and status-only mutation methods in
+/// other endpoint families.
+pub struct StatusOnlyResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `my/balance`.
+pub struct BalanceResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Account balance as returned by SMS.RU (string-preserving representation).
+    pub balance: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `my/free`.
+pub struct FreeUsageResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Total number of free messages available for own number.
+    pub total_free: Option<u32>,
+    /// Number of free messages used today.
+    pub used_today: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `my/limit`.
+pub struct LimitUsageResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Daily sending limit configured for the account.
+    pub total_limit: Option<u32>,
+    /// Number of recipients used today against the daily limit.
+    pub used_today: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `my/senders`.
+pub struct SendersResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Approved senders configured in SMS.RU account.
+    pub senders: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `stoplist/get`.
+pub struct StoplistResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Stoplist entries keyed by phone number with associated notes.
+    pub stoplist: BTreeMap<RawPhoneNumber, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from `callback/add`, `callback/del`, and `callback/get`.
+pub struct CallbacksResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Configured callback URLs.
+    pub callback: Vec<CallbackUrl>,
 }
