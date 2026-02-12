@@ -7,9 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::domain::{
-    ApiId, CheckCallAuthStatus, CheckCallAuthStatusResponse, CheckCost, CheckCostOptions,
-    CheckCostResponse, CheckStatus, CheckStatusResponse, Login, Password, SendOptions, SendSms,
-    SendSmsResponse, StartCallAuth, StartCallAuthResponse, Status, StatusCode, ValidationError,
+    AddCallback, AddStoplistEntry, ApiId, BalanceResponse, CallbacksResponse, CheckCallAuthStatus,
+    CheckCallAuthStatusResponse, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus,
+    CheckStatusResponse, FreeUsageResponse, LimitUsageResponse, Login, Password, RemoveCallback,
+    RemoveStoplistEntry, SendOptions, SendSms, SendSmsResponse, SendersResponse, StartCallAuth,
+    StartCallAuthResponse, Status, StatusCode, StatusOnlyResponse, StoplistResponse,
+    ValidationError,
 };
 
 const DEFAULT_SEND_ENDPOINT: &str = "https://sms.ru/sms/send";
@@ -17,6 +20,17 @@ const DEFAULT_COST_ENDPOINT: &str = "https://sms.ru/sms/cost";
 const DEFAULT_STATUS_ENDPOINT: &str = "https://sms.ru/sms/status";
 const DEFAULT_CALLCHECK_ADD_ENDPOINT: &str = "https://sms.ru/callcheck/add";
 const DEFAULT_CALLCHECK_STATUS_ENDPOINT: &str = "https://sms.ru/callcheck/status";
+const DEFAULT_AUTH_CHECK_ENDPOINT: &str = "https://sms.ru/auth/check";
+const DEFAULT_MY_BALANCE_ENDPOINT: &str = "https://sms.ru/my/balance";
+const DEFAULT_MY_FREE_ENDPOINT: &str = "https://sms.ru/my/free";
+const DEFAULT_MY_LIMIT_ENDPOINT: &str = "https://sms.ru/my/limit";
+const DEFAULT_MY_SENDERS_ENDPOINT: &str = "https://sms.ru/my/senders";
+const DEFAULT_STOPLIST_ADD_ENDPOINT: &str = "https://sms.ru/stoplist/add";
+const DEFAULT_STOPLIST_DEL_ENDPOINT: &str = "https://sms.ru/stoplist/del";
+const DEFAULT_STOPLIST_GET_ENDPOINT: &str = "https://sms.ru/stoplist/get";
+const DEFAULT_CALLBACK_ADD_ENDPOINT: &str = "https://sms.ru/callback/add";
+const DEFAULT_CALLBACK_DEL_ENDPOINT: &str = "https://sms.ru/callback/del";
+const DEFAULT_CALLBACK_GET_ENDPOINT: &str = "https://sms.ru/callback/get";
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -143,6 +157,17 @@ pub struct SmsRuClientBuilder {
     status_endpoint: String,
     callcheck_add_endpoint: String,
     callcheck_status_endpoint: String,
+    auth_check_endpoint: String,
+    my_balance_endpoint: String,
+    my_free_endpoint: String,
+    my_limit_endpoint: String,
+    my_senders_endpoint: String,
+    stoplist_add_endpoint: String,
+    stoplist_del_endpoint: String,
+    stoplist_get_endpoint: String,
+    callback_add_endpoint: String,
+    callback_del_endpoint: String,
+    callback_get_endpoint: String,
     timeout: Option<Duration>,
     user_agent: Option<String>,
 }
@@ -157,6 +182,17 @@ impl SmsRuClientBuilder {
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
             callcheck_add_endpoint: DEFAULT_CALLCHECK_ADD_ENDPOINT.to_owned(),
             callcheck_status_endpoint: DEFAULT_CALLCHECK_STATUS_ENDPOINT.to_owned(),
+            auth_check_endpoint: DEFAULT_AUTH_CHECK_ENDPOINT.to_owned(),
+            my_balance_endpoint: DEFAULT_MY_BALANCE_ENDPOINT.to_owned(),
+            my_free_endpoint: DEFAULT_MY_FREE_ENDPOINT.to_owned(),
+            my_limit_endpoint: DEFAULT_MY_LIMIT_ENDPOINT.to_owned(),
+            my_senders_endpoint: DEFAULT_MY_SENDERS_ENDPOINT.to_owned(),
+            stoplist_add_endpoint: DEFAULT_STOPLIST_ADD_ENDPOINT.to_owned(),
+            stoplist_del_endpoint: DEFAULT_STOPLIST_DEL_ENDPOINT.to_owned(),
+            stoplist_get_endpoint: DEFAULT_STOPLIST_GET_ENDPOINT.to_owned(),
+            callback_add_endpoint: DEFAULT_CALLBACK_ADD_ENDPOINT.to_owned(),
+            callback_del_endpoint: DEFAULT_CALLBACK_DEL_ENDPOINT.to_owned(),
+            callback_get_endpoint: DEFAULT_CALLBACK_GET_ENDPOINT.to_owned(),
             timeout: None,
             user_agent: None,
         }
@@ -173,6 +209,17 @@ impl SmsRuClientBuilder {
         self.status_endpoint = endpoint;
         self.callcheck_add_endpoint = self.status_endpoint.clone();
         self.callcheck_status_endpoint = self.status_endpoint.clone();
+        self.auth_check_endpoint = self.status_endpoint.clone();
+        self.my_balance_endpoint = self.status_endpoint.clone();
+        self.my_free_endpoint = self.status_endpoint.clone();
+        self.my_limit_endpoint = self.status_endpoint.clone();
+        self.my_senders_endpoint = self.status_endpoint.clone();
+        self.stoplist_add_endpoint = self.status_endpoint.clone();
+        self.stoplist_del_endpoint = self.status_endpoint.clone();
+        self.stoplist_get_endpoint = self.status_endpoint.clone();
+        self.callback_add_endpoint = self.status_endpoint.clone();
+        self.callback_del_endpoint = self.status_endpoint.clone();
+        self.callback_get_endpoint = self.status_endpoint.clone();
         self
     }
 
@@ -203,6 +250,72 @@ impl SmsRuClientBuilder {
     /// Override the SMS.RU endpoint URL for `callcheck/status`.
     pub fn callcheck_status_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.callcheck_status_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `auth/check`.
+    pub fn auth_check_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.auth_check_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `my/balance`.
+    pub fn my_balance_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.my_balance_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `my/free`.
+    pub fn my_free_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.my_free_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `my/limit`.
+    pub fn my_limit_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.my_limit_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `my/senders`.
+    pub fn my_senders_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.my_senders_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `stoplist/add`.
+    pub fn stoplist_add_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.stoplist_add_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `stoplist/del`.
+    pub fn stoplist_del_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.stoplist_del_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `stoplist/get`.
+    pub fn stoplist_get_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.stoplist_get_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `callback/add`.
+    pub fn callback_add_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.callback_add_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `callback/del`.
+    pub fn callback_del_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.callback_del_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `callback/get`.
+    pub fn callback_get_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.callback_get_endpoint = endpoint.into();
         self
     }
 
@@ -239,6 +352,17 @@ impl SmsRuClientBuilder {
             status_endpoint: self.status_endpoint,
             callcheck_add_endpoint: self.callcheck_add_endpoint,
             callcheck_status_endpoint: self.callcheck_status_endpoint,
+            auth_check_endpoint: self.auth_check_endpoint,
+            my_balance_endpoint: self.my_balance_endpoint,
+            my_free_endpoint: self.my_free_endpoint,
+            my_limit_endpoint: self.my_limit_endpoint,
+            my_senders_endpoint: self.my_senders_endpoint,
+            stoplist_add_endpoint: self.stoplist_add_endpoint,
+            stoplist_del_endpoint: self.stoplist_del_endpoint,
+            stoplist_get_endpoint: self.stoplist_get_endpoint,
+            callback_add_endpoint: self.callback_add_endpoint,
+            callback_del_endpoint: self.callback_del_endpoint,
+            callback_get_endpoint: self.callback_get_endpoint,
             http: Arc::new(ReqwestTransport { client }),
         })
     }
@@ -254,6 +378,17 @@ impl SmsRuClientBuilder {
 /// - `https://sms.ru/sms/status` for checking message status
 /// - `https://sms.ru/callcheck/add` for starting call authentication
 /// - `https://sms.ru/callcheck/status` for checking call authentication status
+/// - `https://sms.ru/auth/check` for validating credentials
+/// - `https://sms.ru/my/balance` for account balance
+/// - `https://sms.ru/my/free` for free-messages usage
+/// - `https://sms.ru/my/limit` for daily limit usage
+/// - `https://sms.ru/my/senders` for approved sender list
+/// - `https://sms.ru/stoplist/add` for adding stoplist entries
+/// - `https://sms.ru/stoplist/del` for removing stoplist entries
+/// - `https://sms.ru/stoplist/get` for listing stoplist entries
+/// - `https://sms.ru/callback/add` for adding callback handlers
+/// - `https://sms.ru/callback/del` for removing callback handlers
+/// - `https://sms.ru/callback/get` for listing callback handlers
 ///
 /// All methods expect JSON responses (`json=1`).
 pub struct SmsRuClient {
@@ -263,6 +398,17 @@ pub struct SmsRuClient {
     status_endpoint: String,
     callcheck_add_endpoint: String,
     callcheck_status_endpoint: String,
+    auth_check_endpoint: String,
+    my_balance_endpoint: String,
+    my_free_endpoint: String,
+    my_limit_endpoint: String,
+    my_senders_endpoint: String,
+    stoplist_add_endpoint: String,
+    stoplist_del_endpoint: String,
+    stoplist_get_endpoint: String,
+    callback_add_endpoint: String,
+    callback_del_endpoint: String,
+    callback_get_endpoint: String,
     http: Arc<dyn HttpTransport>,
 }
 
@@ -278,6 +424,17 @@ impl SmsRuClient {
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
             callcheck_add_endpoint: DEFAULT_CALLCHECK_ADD_ENDPOINT.to_owned(),
             callcheck_status_endpoint: DEFAULT_CALLCHECK_STATUS_ENDPOINT.to_owned(),
+            auth_check_endpoint: DEFAULT_AUTH_CHECK_ENDPOINT.to_owned(),
+            my_balance_endpoint: DEFAULT_MY_BALANCE_ENDPOINT.to_owned(),
+            my_free_endpoint: DEFAULT_MY_FREE_ENDPOINT.to_owned(),
+            my_limit_endpoint: DEFAULT_MY_LIMIT_ENDPOINT.to_owned(),
+            my_senders_endpoint: DEFAULT_MY_SENDERS_ENDPOINT.to_owned(),
+            stoplist_add_endpoint: DEFAULT_STOPLIST_ADD_ENDPOINT.to_owned(),
+            stoplist_del_endpoint: DEFAULT_STOPLIST_DEL_ENDPOINT.to_owned(),
+            stoplist_get_endpoint: DEFAULT_STOPLIST_GET_ENDPOINT.to_owned(),
+            callback_add_endpoint: DEFAULT_CALLBACK_ADD_ENDPOINT.to_owned(),
+            callback_del_endpoint: DEFAULT_CALLBACK_DEL_ENDPOINT.to_owned(),
+            callback_get_endpoint: DEFAULT_CALLBACK_GET_ENDPOINT.to_owned(),
             http: Arc::new(ReqwestTransport {
                 client: reqwest::Client::new(),
             }),
@@ -539,6 +696,425 @@ impl SmsRuClient {
 
         Ok(parsed)
     }
+
+    /// Validate current authentication credentials through `auth/check`.
+    pub async fn check_auth(&self) -> Result<StatusOnlyResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_auth_check_form());
+
+        let response = self
+            .http
+            .post_form(&self.auth_check_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_status_only_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Get current account balance through `my/balance`.
+    pub async fn get_balance(&self) -> Result<BalanceResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_balance_form());
+
+        let response = self
+            .http
+            .post_form(&self.my_balance_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_balance_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Get free messages usage through `my/free`.
+    pub async fn get_free_usage(&self) -> Result<FreeUsageResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_free_usage_form());
+
+        let response = self
+            .http
+            .post_form(&self.my_free_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_free_usage_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Get daily sending-limit usage through `my/limit`.
+    pub async fn get_limit_usage(&self) -> Result<LimitUsageResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_limit_usage_form());
+
+        let response = self
+            .http
+            .post_form(&self.my_limit_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_limit_usage_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Get approved sender names through `my/senders`.
+    pub async fn get_senders(&self) -> Result<SendersResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_senders_form());
+
+        let response = self
+            .http
+            .post_form(&self.my_senders_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_senders_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Add a phone number to account stoplist through `stoplist/add`.
+    pub async fn add_stoplist_entry(
+        &self,
+        request: AddStoplistEntry,
+    ) -> Result<StatusOnlyResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_add_stoplist_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.stoplist_add_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_status_only_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Remove a phone number from account stoplist through `stoplist/del`.
+    pub async fn remove_stoplist_entry(
+        &self,
+        request: RemoveStoplistEntry,
+    ) -> Result<StatusOnlyResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_remove_stoplist_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.stoplist_del_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_status_only_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Get full stoplist through `stoplist/get`.
+    pub async fn get_stoplist(&self) -> Result<StoplistResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_stoplist_form());
+
+        let response = self
+            .http
+            .post_form(&self.stoplist_get_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_get_stoplist_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Add callback handler URL through `callback/add`.
+    pub async fn add_callback(
+        &self,
+        request: AddCallback,
+    ) -> Result<CallbacksResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_add_callback_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.callback_add_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_callbacks_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Remove callback handler URL through `callback/del`.
+    pub async fn remove_callback(
+        &self,
+        request: RemoveCallback,
+    ) -> Result<CallbacksResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_remove_callback_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.callback_del_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_callbacks_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// List callback handler URLs through `callback/get`.
+    pub async fn get_callbacks(&self) -> Result<CallbacksResponse, SmsRuError> {
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_get_callbacks_form());
+
+        let response = self
+            .http
+            .post_form(&self.callback_get_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_callbacks_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
 }
 
 fn send_request_options(request: &SendSms) -> &SendOptions {
@@ -560,9 +1136,10 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::domain::{
-        CallCheckId, CheckCallAuthStatus, CheckCallAuthStatusOptions, CheckCost, CheckCostOptions,
-        CheckStatus, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsId, StartCallAuth,
-        StartCallAuthOptions, StatusCode,
+        AddCallback, AddStoplistEntry, CallCheckId, CallbackUrl, CheckCallAuthStatus,
+        CheckCallAuthStatusOptions, CheckCost, CheckCostOptions, CheckStatus, MessageText,
+        RawPhoneNumber, RemoveCallback, RemoveStoplistEntry, SendOptions, SendSms, SmsId,
+        StartCallAuth, StartCallAuthOptions, StatusCode, StoplistText,
     };
 
     use super::*;
@@ -631,6 +1208,17 @@ mod tests {
             status_endpoint: "https://example.invalid/sms/status".to_owned(),
             callcheck_add_endpoint: "https://example.invalid/callcheck/add".to_owned(),
             callcheck_status_endpoint: "https://example.invalid/callcheck/status".to_owned(),
+            auth_check_endpoint: "https://example.invalid/auth/check".to_owned(),
+            my_balance_endpoint: "https://example.invalid/my/balance".to_owned(),
+            my_free_endpoint: "https://example.invalid/my/free".to_owned(),
+            my_limit_endpoint: "https://example.invalid/my/limit".to_owned(),
+            my_senders_endpoint: "https://example.invalid/my/senders".to_owned(),
+            stoplist_add_endpoint: "https://example.invalid/stoplist/add".to_owned(),
+            stoplist_del_endpoint: "https://example.invalid/stoplist/del".to_owned(),
+            stoplist_get_endpoint: "https://example.invalid/stoplist/get".to_owned(),
+            callback_add_endpoint: "https://example.invalid/callback/add".to_owned(),
+            callback_del_endpoint: "https://example.invalid/callback/del".to_owned(),
+            callback_get_endpoint: "https://example.invalid/callback/get".to_owned(),
             http: Arc::new(transport),
         }
     }
@@ -1131,6 +1719,350 @@ mod tests {
         assert!(matches!(err, SmsRuError::UnsupportedResponseFormat(_)));
     }
 
+    #[tokio::test]
+    async fn check_auth_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.check_auth().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/auth/check"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn check_auth_maps_top_level_error_to_api_error() {
+        let json = r#"
+        {
+          "status": "ERROR",
+          "status_code": 301,
+          "status_text": "Invalid auth"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("bad_key").unwrap(), transport);
+
+        let err = client.check_auth().await.unwrap_err();
+        match err {
+            SmsRuError::Api {
+                status_code,
+                status_text,
+            } => {
+                assert_eq!(status_code, StatusCode::new(301));
+                assert_eq!(status_text.as_deref(), Some("Invalid auth"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_balance_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "balance": 4762.58
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_balance().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.balance.as_deref(), Some("4762.58"));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/my/balance"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn get_free_usage_uses_endpoint_and_parses_string_counts() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "total_free": "5",
+          "used_today": 3
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_free_usage().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.total_free, Some(5));
+        assert_eq!(response.used_today, Some(3));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/my/free"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn get_limit_usage_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "total_limit": 100,
+          "used_today": "7"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_limit_usage().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.total_limit, Some(100));
+        assert_eq!(response.used_today, Some(7));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/my/limit"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn get_senders_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "senders": ["sender1", "sender2"]
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_senders().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.senders, vec!["sender1", "sender2"]);
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/my/senders"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn add_stoplist_entry_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request = AddStoplistEntry::new(
+            RawPhoneNumber::new("79251234567").unwrap(),
+            StoplistText::new("fraud").unwrap(),
+        );
+
+        let response = client.add_stoplist_entry(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/stoplist/add"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "stoplist_phone", "79251234567");
+        assert_param(&params, "stoplist_text", "fraud");
+    }
+
+    #[tokio::test]
+    async fn remove_stoplist_entry_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request = RemoveStoplistEntry::new(RawPhoneNumber::new("79251234567").unwrap());
+
+        let response = client.remove_stoplist_entry(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/stoplist/del"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "stoplist_phone", "79251234567");
+    }
+
+    #[tokio::test]
+    async fn get_stoplist_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "stoplist": {
+            "79251234567": "fraud"
+          }
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_stoplist().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(
+            response
+                .stoplist
+                .get(&RawPhoneNumber::new("79251234567").unwrap())
+                .map(String::as_str),
+            Some("fraud")
+        );
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/stoplist/get"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn get_stoplist_maps_top_level_error_to_api_error() {
+        let json = r#"
+        {
+          "status": "ERROR",
+          "status_code": 301,
+          "status_text": "Invalid auth"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("bad_key").unwrap(), transport);
+
+        let err = client.get_stoplist().await.unwrap_err();
+        match err {
+            SmsRuError::Api {
+                status_code,
+                status_text,
+            } => {
+                assert_eq!(status_code, StatusCode::new(301));
+                assert_eq!(status_text.as_deref(), Some("Invalid auth"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn add_callback_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "callback": ["https://example.com/callback"]
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request = AddCallback::new(CallbackUrl::new("https://example.com/callback").unwrap());
+
+        let response = client.add_callback(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.callback.len(), 1);
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/callback/add"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "url", "https://example.com/callback");
+    }
+
+    #[tokio::test]
+    async fn remove_callback_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "callback": []
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request =
+            RemoveCallback::new(CallbackUrl::new("https://example.com/callback").unwrap());
+
+        let response = client.remove_callback(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/callback/del"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "url", "https://example.com/callback");
+    }
+
+    #[tokio::test]
+    async fn get_callbacks_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "callback": ["https://example.com/a", "http://example.com/b"]
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+
+        let response = client.get_callbacks().await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.callback.len(), 2);
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/callback/get"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+    }
+
+    #[tokio::test]
+    async fn get_callbacks_maps_top_level_error_to_api_error() {
+        let json = r#"
+        {
+          "status": "ERROR",
+          "status_code": 901,
+          "status_text": "Invalid callback URL"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+
+        let err = client.get_callbacks().await.unwrap_err();
+        match err {
+            SmsRuError::Api {
+                status_code,
+                status_text,
+            } => {
+                assert_eq!(status_code, StatusCode::new(901));
+                assert_eq!(status_text.as_deref(), Some("Invalid callback URL"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
     #[test]
     fn builder_endpoint_overrides_are_applied() {
         let client = SmsRuClient::builder(Auth::api_id("key").unwrap())
@@ -1145,6 +2077,17 @@ mod tests {
             client.callcheck_status_endpoint,
             "https://example.invalid/all"
         );
+        assert_eq!(client.auth_check_endpoint, "https://example.invalid/all");
+        assert_eq!(client.my_balance_endpoint, "https://example.invalid/all");
+        assert_eq!(client.my_free_endpoint, "https://example.invalid/all");
+        assert_eq!(client.my_limit_endpoint, "https://example.invalid/all");
+        assert_eq!(client.my_senders_endpoint, "https://example.invalid/all");
+        assert_eq!(client.stoplist_add_endpoint, "https://example.invalid/all");
+        assert_eq!(client.stoplist_del_endpoint, "https://example.invalid/all");
+        assert_eq!(client.stoplist_get_endpoint, "https://example.invalid/all");
+        assert_eq!(client.callback_add_endpoint, "https://example.invalid/all");
+        assert_eq!(client.callback_del_endpoint, "https://example.invalid/all");
+        assert_eq!(client.callback_get_endpoint, "https://example.invalid/all");
 
         let client = SmsRuClient::builder(Auth::api_id("key").unwrap())
             .send_endpoint("https://example.invalid/sms/send")
@@ -1152,6 +2095,17 @@ mod tests {
             .status_endpoint("https://example.invalid/sms/status")
             .callcheck_add_endpoint("https://example.invalid/callcheck/add")
             .callcheck_status_endpoint("https://example.invalid/callcheck/status")
+            .auth_check_endpoint("https://example.invalid/auth/check")
+            .my_balance_endpoint("https://example.invalid/my/balance")
+            .my_free_endpoint("https://example.invalid/my/free")
+            .my_limit_endpoint("https://example.invalid/my/limit")
+            .my_senders_endpoint("https://example.invalid/my/senders")
+            .stoplist_add_endpoint("https://example.invalid/stoplist/add")
+            .stoplist_del_endpoint("https://example.invalid/stoplist/del")
+            .stoplist_get_endpoint("https://example.invalid/stoplist/get")
+            .callback_add_endpoint("https://example.invalid/callback/add")
+            .callback_del_endpoint("https://example.invalid/callback/del")
+            .callback_get_endpoint("https://example.invalid/callback/get")
             .build()
             .unwrap();
         assert_eq!(client.send_endpoint, "https://example.invalid/sms/send");
@@ -1164,6 +2118,44 @@ mod tests {
         assert_eq!(
             client.callcheck_status_endpoint,
             "https://example.invalid/callcheck/status"
+        );
+        assert_eq!(
+            client.auth_check_endpoint,
+            "https://example.invalid/auth/check"
+        );
+        assert_eq!(
+            client.my_balance_endpoint,
+            "https://example.invalid/my/balance"
+        );
+        assert_eq!(client.my_free_endpoint, "https://example.invalid/my/free");
+        assert_eq!(client.my_limit_endpoint, "https://example.invalid/my/limit");
+        assert_eq!(
+            client.my_senders_endpoint,
+            "https://example.invalid/my/senders"
+        );
+        assert_eq!(
+            client.stoplist_add_endpoint,
+            "https://example.invalid/stoplist/add"
+        );
+        assert_eq!(
+            client.stoplist_del_endpoint,
+            "https://example.invalid/stoplist/del"
+        );
+        assert_eq!(
+            client.stoplist_get_endpoint,
+            "https://example.invalid/stoplist/get"
+        );
+        assert_eq!(
+            client.callback_add_endpoint,
+            "https://example.invalid/callback/add"
+        );
+        assert_eq!(
+            client.callback_del_endpoint,
+            "https://example.invalid/callback/del"
+        );
+        assert_eq!(
+            client.callback_get_endpoint,
+            "https://example.invalid/callback/get"
         );
     }
 }

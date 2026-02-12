@@ -7,19 +7,22 @@ mod value;
 
 pub use request::JsonMode;
 pub use request::{
-    CHECK_COST_MAX_RECIPIENTS, CHECK_STATUS_MAX_SMS_IDS, CheckCallAuthStatus,
-    CheckCallAuthStatusOptions, CheckCost, CheckCostOptions, CheckStatus, SEND_SMS_MAX_RECIPIENTS,
-    SendOptions, SendSms, StartCallAuth, StartCallAuthOptions,
+    AddCallback, AddStoplistEntry, CHECK_COST_MAX_RECIPIENTS, CHECK_STATUS_MAX_SMS_IDS,
+    CheckCallAuthStatus, CheckCallAuthStatusOptions, CheckCost, CheckCostOptions, CheckStatus,
+    RemoveCallback, RemoveStoplistEntry, SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms,
+    StartCallAuth, StartCallAuthOptions,
 };
 pub use response::{
-    CheckCallAuthStatusResponse, CheckCostResponse, CheckStatusResponse, SendSmsResponse,
-    SmsCostResult, SmsResult, SmsStatusResult, StartCallAuthResponse, Status,
+    BalanceResponse, CallbacksResponse, CheckCallAuthStatusResponse, CheckCostResponse,
+    CheckStatusResponse, FreeUsageResponse, LimitUsageResponse, SendSmsResponse, SendersResponse,
+    SmsCostResult, SmsResult, SmsStatusResult, StartCallAuthResponse, Status, StatusOnlyResponse,
+    StoplistResponse,
 };
 pub use validation::ValidationError;
 pub use value::{
-    ApiId, CallCheckId, CallCheckStatusCode, KnownCallCheckStatusCode, KnownStatusCode, Login,
-    MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber, SenderId, SmsId, StatusCode,
-    TtlMinutes, UnixTimestamp,
+    ApiId, CallCheckId, CallCheckStatusCode, CallbackUrl, KnownCallCheckStatusCode,
+    KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
+    SenderId, SmsId, StatusCode, StoplistText, TtlMinutes, UnixTimestamp,
 };
 
 #[cfg(test)]

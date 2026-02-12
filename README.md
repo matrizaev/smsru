@@ -1,8 +1,24 @@
 # smsru
 
-Typed Rust client for the SMS.RU HTTP API (`sms/send`, `sms/cost`, `sms/status`).
+Typed Rust client for the SMS.RU HTTP API.
 
-This crate focuses on a small, explicit public API: strong domain types for inputs and a client that handles JSON responses. Transport details are internal and not exposed as public modules.
+Supported methods:
+- `sms/send`
+- `sms/cost`
+- `sms/status`
+- `callcheck/add`
+- `callcheck/status`
+- `auth/check`
+- `my/balance`
+- `my/free`
+- `my/limit`
+- `my/senders`
+- `stoplist/add`
+- `stoplist/del`
+- `stoplist/get`
+- `callback/add`
+- `callback/del`
+- `callback/get`
 
 The client is async and expects a Tokio runtime.
 
@@ -17,12 +33,11 @@ use smsru::{Auth, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsRuClient
 
 # async fn run() -> Result<(), smsru::SmsRuError> {
 let client = SmsRuClient::new(Auth::api_id("...")?);
-let recipients = vec![
-    RawPhoneNumber::new("+79255070602")?,
-    RawPhoneNumber::new("+74993221627")?,
-];
-let msg = MessageText::new("hello world")?;
-let request = SendSms::to_many(recipients, msg, SendOptions::default())?;
+let request = SendSms::to_many(
+    vec![RawPhoneNumber::new("+79255070602")?],
+    MessageText::new("hello world")?,
+    SendOptions::default(),
+)?;
 let response = client.send_sms(request).await?;
 println!("status: {:?} code: {:?}", response.status, response.status_code);
 # Ok(())
@@ -36,107 +51,82 @@ println!("status: {:?} code: {:?}", response.status, response.status_code);
 
 ## Request shapes
 
-- One message to many recipients: `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
-- Per-recipient messages: `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
-- Check message cost before sending:
+- One message to many recipients:
+  - `SendSms::to_many(Vec<RawPhoneNumber>, MessageText, SendOptions)`
+- Per-recipient messages:
+  - `SendSms::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, SendOptions)`
+- Check message cost:
   - `CheckCost::to_many(Vec<RawPhoneNumber>, MessageText, CheckCostOptions)`
   - `CheckCost::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, CheckCostOptions)`
-- Check status by message ids: `CheckStatus::new(Vec<SmsId>)` / `CheckStatus::one(SmsId)`
+- Check status:
+  - `CheckStatus::new(Vec<SmsId>)`
+  - `CheckStatus::one(SmsId)`
+- Stoplist:
+  - `AddStoplistEntry::new(RawPhoneNumber, StoplistText)`
+  - `RemoveStoplistEntry::new(RawPhoneNumber)`
+- Callback handlers:
+  - `AddCallback::new(CallbackUrl)`
+  - `RemoveCallback::new(CallbackUrl)`
 
-```rust,no_run
-use std::collections::BTreeMap;
+## Account and utility methods
 
-use smsru::{CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SendOptions, SendSms};
+No-arg client methods (auth + `json=1`):
+- `check_auth()`
+- `get_balance()`
+- `get_free_usage()`
+- `get_limit_usage()`
+- `get_senders()`
+- `get_stoplist()`
+- `get_callbacks()`
 
-fn build() -> Result<SendSms, smsru::ValidationError> {
-let mut messages = BTreeMap::new();
-messages.insert(
-    RawPhoneNumber::new("+79251234567")?,
-    MessageText::new("hello")?,
-);
-Ok(SendSms::per_recipient(messages, SendOptions::default())?)
-}
+Input-based client methods:
+- `send_sms(...)`
+- `check_cost(...)`
+- `check_status(...)`
+- `start_call_auth(...)`
+- `check_call_auth_status(...)`
+- `add_stoplist_entry(...)`
+- `remove_stoplist_entry(...)`
+- `add_callback(...)`
+- `remove_callback(...)`
 
-fn build_cost() -> Result<CheckCost, smsru::ValidationError> {
-CheckCost::to_many(
-    vec![RawPhoneNumber::new("+79251234567")?],
-    MessageText::new("hello")?,
-    CheckCostOptions::default(),
-)
-}
-```
+## Strong types
 
-```rust,no_run
-use smsru::{CheckStatus, SmsId};
-
-fn build_status() -> Result<CheckStatus, smsru::ValidationError> {
-let ids = vec![
-    SmsId::new("000000-000001")?,
-    SmsId::new("000000-000002")?,
-];
-CheckStatus::new(ids)
-}
-```
-
-## Phone numbers
-
-- `RawPhoneNumber` preserves input as-is after trimming whitespace.
-- `PhoneNumber::parse(default_region, input)` validates and normalizes to E.164. Convert to `RawPhoneNumber` when building requests.
+- `RawPhoneNumber`: non-empty, no normalization.
+- `PhoneNumber::parse(...)`: optional E.164 normalization path.
+- `StoplistText`: non-empty note for stoplist entries.
+- `CallbackUrl`: absolute `http://` or `https://` URL.
 
 ## Client configuration
 
-Use `SmsRuClient::builder(auth)` to configure `timeout`, `user_agent`, and endpoints:
+Use `SmsRuClient::builder(auth)` to configure `timeout`, `user_agent`, and endpoints.
 
-- `endpoint(...)`: set `sms/send`, `sms/cost`, and `sms/status` endpoint URLs
-- `send_endpoint(...)`: set only `sms/send` URL
-- `cost_endpoint(...)`: set only `sms/cost` URL
-- `status_endpoint(...)`: set only `sms/status` URL
+Per-endpoint overrides:
+- `send_endpoint(...)`
+- `cost_endpoint(...)`
+- `status_endpoint(...)`
+- `callcheck_add_endpoint(...)`
+- `callcheck_status_endpoint(...)`
+- `auth_check_endpoint(...)`
+- `my_balance_endpoint(...)`
+- `my_free_endpoint(...)`
+- `my_limit_endpoint(...)`
+- `my_senders_endpoint(...)`
+- `stoplist_add_endpoint(...)`
+- `stoplist_del_endpoint(...)`
+- `stoplist_get_endpoint(...)`
+- `callback_add_endpoint(...)`
+- `callback_del_endpoint(...)`
+- `callback_get_endpoint(...)`
 
-## Check cost example
-
-```rust,no_run
-use smsru::{Auth, CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SmsRuClient};
-
-# async fn run() -> Result<(), smsru::SmsRuError> {
-let client = SmsRuClient::new(Auth::api_id("...")?);
-let request = CheckCost::to_many(
-    vec![RawPhoneNumber::new("+79251234567")?],
-    MessageText::new("hello")?,
-    CheckCostOptions::default(),
-)?;
-let response = client.check_cost(request).await?;
-println!(
-    "status: {:?} code: {:?} total_cost: {:?}",
-    response.status, response.status_code, response.total_cost
-);
-# Ok(())
-# }
-```
-
-## Check status example
-
-```rust,no_run
-use smsru::{Auth, CheckStatus, SmsId, SmsRuClient};
-
-# async fn run() -> Result<(), smsru::SmsRuError> {
-let client = SmsRuClient::new(Auth::api_id("...")?);
-let request = CheckStatus::new(vec![
-    SmsId::new("000000-000001")?,
-    SmsId::new("000000-000002")?,
-])?;
-let response = client.check_status(request).await?;
-
-for (sms_id, result) in response.sms {
-    println!("{sms_id:?}: {:?} {:?}", result.status, result.status_code);
-}
-# Ok(())
-# }
-```
-
-## Responses and status codes
-
-Responses preserve SMS.RU status codes via `StatusCode`. Known codes are mapped to `KnownStatusCode` through `StatusCode::known_kind()`.
+`endpoint(...)` sets all method endpoints at once.
 
 ## JSON-only transport
 
-The client always sends `json=1` and only supports JSON responses. `JsonMode::Plain` is rejected by the client.
+The client always sends `json=1` and only supports JSON responses.
+When a request type exposes `JsonMode`, `JsonMode::Plain` is rejected by the client.
+
+## Status codes
+
+Responses preserve SMS.RU status codes via `StatusCode`.
+Known codes are mapped through `StatusCode::known_kind()`; unknown codes are preserved.

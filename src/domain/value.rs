@@ -1,6 +1,7 @@
 use crate::domain::validation::ValidationError;
 
 use phonenumber::country;
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// SMS.RU `api_id` token.
@@ -151,6 +152,70 @@ impl MessageText {
     }
 
     /// Borrow the message text as provided.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Stoplist note text (`stoplist_text`).
+///
+/// Invariant: non-empty after trimming. The original value is preserved.
+pub struct StoplistText(String);
+
+impl StoplistText {
+    /// Form field name used by SMS.RU (`stoplist_text`).
+    pub const FIELD: &'static str = "stoplist_text";
+
+    /// Create validated stoplist note text.
+    pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(ValidationError::Empty { field: Self::FIELD });
+        }
+        Ok(Self(value))
+    }
+
+    /// Borrow the stoplist note text as provided.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Callback handler URL (`url`) for `callback/*` endpoints.
+///
+/// Invariant: absolute URL with `http` or `https` scheme and host.
+pub struct CallbackUrl(String);
+
+impl CallbackUrl {
+    /// Form field name used by SMS.RU (`url`).
+    pub const FIELD: &'static str = "url";
+
+    /// Create a validated callback URL.
+    pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let value = value.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ValidationError::Empty { field: Self::FIELD });
+        }
+
+        let parsed = Url::parse(trimmed).map_err(|_| ValidationError::InvalidCallbackUrl {
+            input: trimmed.to_owned(),
+        })?;
+
+        let is_http = matches!(parsed.scheme(), "http" | "https");
+        let has_host = parsed.has_host();
+        if !is_http || !has_host {
+            return Err(ValidationError::InvalidCallbackUrl {
+                input: trimmed.to_owned(),
+            });
+        }
+
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    /// Borrow callback URL as provided.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -641,6 +706,15 @@ mod tests {
         let msg = MessageText::new(" hi ").unwrap();
         assert_eq!(msg.as_str(), " hi ");
         assert!(MessageText::new("  ").is_err());
+
+        let stoplist_text = StoplistText::new(" note ").unwrap();
+        assert_eq!(stoplist_text.as_str(), " note ");
+        assert!(StoplistText::new("  ").is_err());
+
+        let callback_url = CallbackUrl::new(" https://example.com/callback ").unwrap();
+        assert_eq!(callback_url.as_str(), "https://example.com/callback");
+        assert!(CallbackUrl::new("ftp://example.com").is_err());
+        assert!(CallbackUrl::new("/relative").is_err());
 
         let sms_id = SmsId::new(" 000000-000001 ").unwrap();
         assert_eq!(sms_id.as_str(), "000000-000001");
