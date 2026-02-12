@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
 
+use super::money::TransportMoney;
 use crate::domain::{
     JsonMode, MessageText, PartnerId, RawPhoneNumber, SendOptions, SendSms, SendSmsResponse,
-    SenderId, SmsResult, Status, StatusCode, TtlMinutes, UnixTimestamp,
+    SenderId, SmsId, SmsResult, Status, StatusCode, TtlMinutes, UnixTimestamp,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +15,9 @@ pub enum TransportError {
 
     #[error("response contains unknown phone number key: {key}")]
     UnknownPhoneNumberKey { key: String },
+
+    #[error("response contains invalid sms id: {value}")]
+    InvalidSmsId { value: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -39,25 +43,9 @@ struct SendSmsJsonResponse {
     #[serde(default)]
     status_text: Option<String>,
     #[serde(default)]
-    balance: Option<TransportBalance>,
+    balance: Option<TransportMoney>,
     #[serde(default)]
     sms: BTreeMap<String, SmsJsonResult>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum TransportBalance {
-    String(String),
-    Number(serde_json::Number),
-}
-
-impl TransportBalance {
-    fn into_string(self) -> String {
-        match self {
-            Self::String(value) => value,
-            Self::Number(value) => value.to_string(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -153,7 +141,13 @@ pub fn decode_send_sms_json_response(
                     status: value.status.into(),
                     status_code: StatusCode::new(value.status_code),
                     status_text: value.status_text,
-                    sms_id: value.sms_id,
+                    sms_id: value
+                        .sms_id
+                        .map(|value| {
+                            SmsId::new(value.clone())
+                                .map_err(|_| TransportError::InvalidSmsId { value })
+                        })
+                        .transpose()?,
                 },
             ))
         })
@@ -163,7 +157,7 @@ pub fn decode_send_sms_json_response(
         status: parsed.status.into(),
         status_code: StatusCode::new(parsed.status_code),
         status_text: parsed.status_text,
-        balance: parsed.balance.map(TransportBalance::into_string),
+        balance: parsed.balance.map(TransportMoney::into_string),
         sms,
     })
 }
@@ -305,7 +299,7 @@ mod tests {
         {
           "status": "OK",
           "status_code": 100,
-          "balance": 12.34,
+          "balance": 12.340,
           "sms": {
             "+79251234567": {
               "status": "OK",
@@ -319,13 +313,13 @@ mod tests {
         let resp = decode_send_sms_json_response(&req, json).unwrap();
         assert_eq!(resp.status, Status::Ok);
         assert_eq!(resp.status_code, StatusCode::new(100));
-        assert_eq!(resp.balance.as_deref(), Some("12.34"));
+        assert_eq!(resp.balance.as_deref(), Some("12.340"));
         assert_eq!(resp.sms.len(), 1);
 
         let result = resp.sms.get(&p1).unwrap();
         assert_eq!(result.status, Status::Ok);
         assert_eq!(result.status_code, StatusCode::new(100));
-        assert_eq!(result.sms_id.as_deref(), Some("abc123"));
+        assert_eq!(result.sms_id.as_ref().map(SmsId::as_str), Some("abc123"));
     }
 
     #[test]
@@ -375,6 +369,33 @@ mod tests {
         let err = decode_send_sms_json_response(&req, json).unwrap_err();
         match err {
             TransportError::UnknownPhoneNumberKey { key } => assert_eq!(key, "000"),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decode_json_response_errors_on_invalid_sms_id() {
+        let p1 = RawPhoneNumber::new("+79251234567").unwrap();
+        let msg = MessageText::new("hello").unwrap();
+        let req = SendSms::to_many(vec![p1], msg, SendOptions::default()).unwrap();
+
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "sms": {
+            "+79251234567": {
+              "status": "OK",
+              "status_code": 100,
+              "sms_id": "  "
+            }
+          }
+        }
+        "#;
+
+        let err = decode_send_sms_json_response(&req, json).unwrap_err();
+        match err {
+            TransportError::InvalidSmsId { value } => assert_eq!(value, "  "),
             other => panic!("unexpected error: {other:?}"),
         }
     }

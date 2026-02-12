@@ -3,11 +3,13 @@ use std::net::IpAddr;
 
 use crate::domain::validation::ValidationError;
 use crate::domain::value::{
-    MessageText, PartnerId, RawPhoneNumber, SenderId, TtlMinutes, UnixTimestamp,
+    MessageText, PartnerId, RawPhoneNumber, SenderId, SmsId, TtlMinutes, UnixTimestamp,
 };
 
 /// SMS.RU "send SMS" API limit: maximum number of recipients per request.
 pub const SEND_SMS_MAX_RECIPIENTS: usize = 100;
+/// SMS.RU "check status" API limit: maximum number of ids per request.
+pub const CHECK_STATUS_MAX_SMS_IDS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Response format mode requested from SMS.RU.
@@ -71,6 +73,14 @@ pub struct ToMany {
 pub struct PerRecipient {
     messages: BTreeMap<RawPhoneNumber, MessageText>,
     options: SendOptions,
+}
+
+#[derive(Debug, Clone)]
+/// A validated "check status" request.
+///
+/// Use [`CheckStatus::new`] for one or many ids or [`CheckStatus::one`] as a convenience.
+pub struct CheckStatus {
+    sms_ids: Vec<SmsId>,
 }
 
 impl SendSms {
@@ -152,6 +162,40 @@ impl PerRecipient {
     /// Request options.
     pub fn options(&self) -> &SendOptions {
         &self.options
+    }
+}
+
+impl CheckStatus {
+    /// Create a "check status" request.
+    ///
+    /// Constraints:
+    /// - `sms_ids` must be non-empty
+    /// - `sms_ids.len()` must be `<= CHECK_STATUS_MAX_SMS_IDS` (100)
+    pub fn new(sms_ids: Vec<SmsId>) -> Result<Self, ValidationError> {
+        if sms_ids.is_empty() {
+            return Err(ValidationError::Empty {
+                field: SmsId::FIELD,
+            });
+        }
+        if sms_ids.len() > CHECK_STATUS_MAX_SMS_IDS {
+            return Err(ValidationError::TooManySmsIds {
+                max: CHECK_STATUS_MAX_SMS_IDS,
+                actual: sms_ids.len(),
+            });
+        }
+        Ok(Self { sms_ids })
+    }
+
+    /// Create a "check status" request for one message id.
+    pub fn one(sms_id: SmsId) -> Self {
+        Self {
+            sms_ids: vec![sms_id],
+        }
+    }
+
+    /// Message ids to query.
+    pub fn sms_ids(&self) -> &[SmsId] {
+        &self.sms_ids
     }
 }
 
@@ -254,5 +298,48 @@ mod tests {
             }
             SendSms::ToMany(_) => panic!("expected per_recipient request"),
         }
+    }
+
+    #[test]
+    fn check_status_rejects_empty_sms_ids() {
+        let err = CheckStatus::new(Vec::new()).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::Empty {
+                field: SmsId::FIELD
+            }
+        );
+    }
+
+    #[test]
+    fn check_status_rejects_too_many_sms_ids() {
+        let sms_ids = (0..(CHECK_STATUS_MAX_SMS_IDS + 1))
+            .map(|idx| SmsId::new(format!("000000-{:06}", idx)).unwrap())
+            .collect::<Vec<_>>();
+        let err = CheckStatus::new(sms_ids).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::TooManySmsIds {
+                max: CHECK_STATUS_MAX_SMS_IDS,
+                actual: CHECK_STATUS_MAX_SMS_IDS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn check_status_one_creates_single_id_request() {
+        let sms_id = SmsId::new("000000-000001").unwrap();
+        let request = CheckStatus::one(sms_id.clone());
+        assert_eq!(request.sms_ids(), &[sms_id]);
+    }
+
+    #[test]
+    fn check_status_new_exposes_sms_ids() {
+        let ids = vec![
+            SmsId::new("000000-000001").unwrap(),
+            SmsId::new("000000-000002").unwrap(),
+        ];
+        let request = CheckStatus::new(ids.clone()).unwrap();
+        assert_eq!(request.sms_ids(), ids.as_slice());
     }
 }

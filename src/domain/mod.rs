@@ -6,12 +6,14 @@ mod validation;
 mod value;
 
 pub use request::JsonMode;
-pub use request::{SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms};
-pub use response::{SendSmsResponse, SmsResult, Status};
+pub use request::{
+    CHECK_STATUS_MAX_SMS_IDS, CheckStatus, SEND_SMS_MAX_RECIPIENTS, SendOptions, SendSms,
+};
+pub use response::{CheckStatusResponse, SendSmsResponse, SmsResult, SmsStatusResult, Status};
 pub use validation::ValidationError;
 pub use value::{
     ApiId, KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber, RawPhoneNumber,
-    SenderId, StatusCode, TtlMinutes, UnixTimestamp,
+    SenderId, SmsId, StatusCode, TtlMinutes, UnixTimestamp,
 };
 
 #[cfg(test)]
@@ -79,6 +81,15 @@ mod tests {
                 field: RawPhoneNumber::FIELD
             }
         ));
+    }
+
+    #[test]
+    fn check_status_id_limit_is_enforced() {
+        let sms_ids = (0..(CHECK_STATUS_MAX_SMS_IDS + 1))
+            .map(|idx| SmsId::new(format!("000000-{:06}", idx)).unwrap())
+            .collect::<Vec<_>>();
+        let err = CheckStatus::new(sms_ids).unwrap_err();
+        assert!(matches!(err, ValidationError::TooManySmsIds { .. }));
     }
 
     #[test]
