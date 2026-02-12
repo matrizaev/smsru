@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add typed `sms/cost` support with:
+  - `CheckCost`, `CheckCostOptions`
+  - `CheckCostResponse`, `SmsCostResult`
+  - `SmsRuClient::check_cost(...)`
+  - `SmsRuClientBuilder::cost_endpoint(...)`
+  - `examples/check_cost.rs`.
+
 ## 0.2.0
 
 - Add typed `sms/status` support with `CheckStatus`, `CheckStatusResponse`, and `SmsStatusResult`.

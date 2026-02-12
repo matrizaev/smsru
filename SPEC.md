@@ -1,10 +1,11 @@
 # smsru crate – Specification
 
-This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for selected SMS.RU HTTP API methods (`sms/send` and `sms/status`).
+This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for selected SMS.RU HTTP API methods (`sms/send`, `sms/cost`, and `sms/status`).
 
 ## Goals
 
 - Provide a safe, typed Rust interface for sending SMS via `https://sms.ru/sms/send`.
+- Provide a safe, typed Rust interface for checking message cost via `https://sms.ru/sms/cost`.
 - Provide a safe, typed Rust interface for checking message delivery status via `https://sms.ru/sms/status`.
 - Default to JSON responses (`json=1`) and parse them into structured types.
 - Surface SMS.RU status codes and errors in a predictable way.
@@ -12,12 +13,13 @@ This document specifies the intended public API and behavior of the `smsru` Rust
 
 ## Non-goals (initial scope)
 
-- Implement all SMS.RU API methods (only `sms/send` and `sms/status` are in scope).
+- Implement all SMS.RU API methods (only `sms/send`, `sms/cost`, and `sms/status` are in scope).
 - Implement CAPTCHA/anti-fraud flows (the documentation recommends CAPTCHA for end-user forms; this crate only performs server-to-server API calls).
 
 ## API endpoints
 
 - **Send SMS**: `https://sms.ru/sms/send`
+- **Check message cost**: `https://sms.ru/sms/cost`
 - **Check message status**: `https://sms.ru/sms/status`
 - **HTTP method**: `POST` (documentation returns code `210` if `GET` is used)
 - **Content-Type**: `application/x-www-form-urlencoded`
@@ -84,6 +86,47 @@ The crate should expose a request type that can represent both “same text to m
 The client must serialize these into the correct SMS.RU parameter format.
 
 For `PerRecipient`, the map contains at most one message per phone number (unique keys). If constructed from an iterator with duplicate phone keys, later entries overwrite earlier ones (standard map semantics).
+
+## Request: “check cost” (`sms/cost`)
+
+Use this method to estimate message price and segment count before sending.
+Normative details in this section are based on the attached SMS.RU documentation export (`Проверить стоимость сообщений перед отправкой.pdf`, updated 03 October 2017).
+
+### Required parameters
+
+- `to` (required): destination phone number(s)
+  - A single number or a comma-separated list (up to 100 numbers per request).
+  - Alternate form: pass per-recipient messages via an array-like form: `to[PHONE]=TEXT`.
+- `msg` (required when `to` is not `to[PHONE]=TEXT`): message text in UTF-8.
+
+Clarification:
+
+- When using `to=...` (a phone list), you provide a single shared `msg=...`.
+- When using `to[PHONE]=TEXT` (per-recipient messages), you do not send `msg`; the per-phone values are the messages.
+
+### Optional parameters
+
+- `json=1` (recommended): request JSON response. The library always sends this; `JsonMode::Plain` is rejected by the client.
+- `from`: sender name/phone. Must be approved by an administrator.
+- `translit=1`: transliterate Cyrillic to Latin before cost calculation.
+
+### Library request model
+
+The crate should expose a dedicated request type for cost checking:
+
+- `CheckCost::to_many(Vec<RawPhoneNumber>, MessageText, CheckCostOptions)`
+- `CheckCost::per_recipient(BTreeMap<RawPhoneNumber, MessageText>, CheckCostOptions)`
+
+Constraints:
+
+- Recipient collection must be non-empty.
+- Recipient count must be `<= 100`.
+
+`CheckCostOptions` includes:
+
+- `json` (JSON-only in the client),
+- `from`,
+- `translit`.
 
 ## Request: “check status” (`sms/status`)
 
@@ -157,6 +200,53 @@ Library behavior:
 
 - The library should default to JSON and does not support non-JSON parsing in the client; `SendOptions.json` must be `JsonMode::Json`.
 
+## Response: “check cost” (`sms/cost`)
+
+### JSON response (`json=1`)
+
+The API returns JSON with at least:
+
+- `status`: `"OK"` or `"ERROR"`
+- `status_code`: numeric code for the overall request
+- `status_text`: optional textual description
+- `sms`: object keyed by recipient phone number, each value containing:
+  - `status`: `"OK"` or `"ERROR"` for this recipient
+  - `status_code`: numeric status code
+  - `status_text`: optional textual description
+  - `cost`: optional per-recipient cost
+  - `sms`: optional per-recipient SMS segment count
+- `total_cost`: optional total cost across recipients
+- `total_sms`: optional total SMS segment count across recipients
+
+Schema/compatibility requirements:
+
+- Treat `status_text`, `cost`, `sms`, `total_cost`, and `total_sms` as optional.
+- Optional fields must use `#[serde(default)]` (or equivalent) to avoid hard failures when fields are missing.
+- Response parsing must allow unknown fields (do not use `#[serde(deny_unknown_fields)]`), to remain forward-compatible if SMS.RU adds fields later.
+
+Money/quantity representation:
+
+- `cost` and `total_cost` must be modeled as `Option<String>` in the public API to avoid floating-point precision loss (transport may receive JSON number or string).
+- `sms` and `total_sms` should be modeled as integer counts (`Option<u32>`).
+
+Library behavior:
+
+- If top-level `status != "OK"`, return `SmsRuError::Api { status_code, status_text }`.
+- If top-level `status == "OK"`, return `CheckCostResponse` with per-recipient results.
+- Per-recipient errors (for example `207`) must be represented in the returned structure and must not fail the whole call when top-level status is OK.
+
+### Non-JSON response (legacy)
+
+When `json` is not set, the cost method returns plain text where:
+
+- First line: request status code (e.g., `100`)
+- Second line: total cost
+- Third line: total SMS segment count
+
+Library behavior:
+
+- The library should default to JSON and does not support non-JSON parsing in the client; cost-check requests are JSON-only.
+
 ## Response: “check status” (`sms/status`)
 
 ### JSON response (`json=1`)
@@ -203,7 +293,7 @@ Library behavior:
 
 ## Status codes
 
-The API uses numeric codes for request-level results and per-message delivery/error states (for both `sms/send` and `sms/status`). The crate should:
+The API uses numeric codes for request-level results and per-message delivery/error states (for `sms/send`, `sms/cost`, and `sms/status`). The crate should:
 
 - Provide a `StatusCode` newtype wrapping an integer (recommend `i32`).
 - Preserve unknown numeric codes (forward compatibility).
@@ -293,10 +383,12 @@ This section describes the intended shape of the library API. Exact naming may e
 - `SmsRuClient::new(auth)` constructs a client:
   - `auth`: `Auth::ApiId(ApiId)` or `Auth::LoginPassword { login: Login, password: Password }`
 - `SmsRuClient::send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
+- `SmsRuClient::check_cost(request) -> Result<CheckCostResponse, SmsRuError>`
 - `SmsRuClient::check_status(request) -> Result<CheckStatusResponse, SmsRuError>`
 - `SmsRuClient::builder(auth)` provides endpoint/timeout/user-agent customization without exposing `reqwest`.
-  - `SmsRuClientBuilder::endpoint(url)` sets both method endpoints.
+  - `SmsRuClientBuilder::endpoint(url)` sets all method endpoints.
   - `SmsRuClientBuilder::send_endpoint(url)` sets the `sms/send` endpoint only.
+  - `SmsRuClientBuilder::cost_endpoint(url)` sets the `sms/cost` endpoint only.
   - `SmsRuClientBuilder::status_endpoint(url)` sets the `sms/status` endpoint only.
 
 HTTP backend policy:
@@ -313,6 +405,9 @@ HTTP backend policy:
 - `SendSms` request model:
   - recipients: `ToMany` or `PerRecipient`
   - options: `json`, `from`, `ip`, `time`, `ttl`, `daytime`, `translit`, `test`, `partner_id`
+- `CheckCost` request model:
+  - recipients: `ToMany` or `PerRecipient`
+  - options: `json`, `from`, `translit`
 - `CheckStatus` request model:
   - `sms_ids: Vec<SmsId>`
   - JSON-only request mode
@@ -328,11 +423,24 @@ HTTP backend policy:
   - `status_text`: `Option<String>`
   - `balance`: `Option<String>`
   - `sms`: `BTreeMap<SmsId, SmsStatusResult>`
+- `CheckCostResponse`:
+  - `status`: `Ok`/`Error`
+  - `status_code`: `StatusCode`
+  - `status_text`: `Option<String>`
+  - `total_cost`: `Option<String>`
+  - `total_sms`: `Option<u32>`
+  - `sms`: `BTreeMap<RawPhoneNumber, SmsCostResult>`
 - `SmsResult`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
   - `status_text`: `Option<String>`
   - `sms_id`: `Option<SmsId>`
+- `SmsCostResult`:
+  - `status`: `Ok`/`Error`
+  - `status_code`: `StatusCode`
+  - `status_text`: `Option<String>`
+  - `cost`: `Option<String>`
+  - `sms`: `Option<u32>`
 - `SmsStatusResult`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
@@ -350,7 +458,7 @@ HTTP backend policy:
 - `SmsRuError::UnsupportedResponseFormat` (non-JSON response requested for methods that this crate supports only in JSON mode)
 - `SmsRuError::Validation` (failed construction / invalid inputs)
 
-Per-recipient (`sms/send`) and per-id (`sms/status`) errors should not automatically map to `SmsRuError::Api` when the top-level response is OK.
+Per-recipient (`sms/send` and `sms/cost`) and per-id (`sms/status`) errors should not automatically map to `SmsRuError::Api` when the top-level response is OK.
 
 ## Implementation notes (non-normative)
 
@@ -404,6 +512,29 @@ let client = SmsRuClient::new(Auth::api_id("...")?);
 let request = SendSms::per_recipient(messages, SendOptions::default())?;
 let resp = client.send_sms(request).await?;
 # let _ = resp;
+# Ok(())
+# }
+```
+
+### Check cost before sending
+
+```rust,no_run
+use smsru::{Auth, CheckCost, CheckCostOptions, MessageText, RawPhoneNumber, SmsRuClient};
+
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+let recipients = vec![
+    RawPhoneNumber::new("+79255070602")?,
+    RawPhoneNumber::new("+74993221627")?,
+];
+let msg = MessageText::new("hello world")?;
+let request = CheckCost::to_many(recipients, msg, CheckCostOptions::default())?;
+let resp = client.check_cost(request).await?;
+
+println!(
+    "status={:?} code={:?} total_cost={:?} total_sms={:?}",
+    resp.status, resp.status_code, resp.total_cost, resp.total_sms
+);
 # Ok(())
 # }
 ```

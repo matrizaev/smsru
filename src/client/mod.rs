@@ -7,11 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::domain::{
-    ApiId, CheckStatus, CheckStatusResponse, Login, Password, SendOptions, SendSms,
-    SendSmsResponse, Status, StatusCode, ValidationError,
+    ApiId, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus, CheckStatusResponse, Login,
+    Password, SendOptions, SendSms, SendSmsResponse, Status, StatusCode, ValidationError,
 };
 
 const DEFAULT_SEND_ENDPOINT: &str = "https://sms.ru/sms/send";
+const DEFAULT_COST_ENDPOINT: &str = "https://sms.ru/sms/cost";
 const DEFAULT_STATUS_ENDPOINT: &str = "https://sms.ru/sms/status";
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -135,6 +136,7 @@ pub enum SmsRuError {
 pub struct SmsRuClientBuilder {
     auth: Auth,
     send_endpoint: String,
+    cost_endpoint: String,
     status_endpoint: String,
     timeout: Option<Duration>,
     user_agent: Option<String>,
@@ -146,19 +148,21 @@ impl SmsRuClientBuilder {
         Self {
             auth,
             send_endpoint: DEFAULT_SEND_ENDPOINT.to_owned(),
+            cost_endpoint: DEFAULT_COST_ENDPOINT.to_owned(),
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
             timeout: None,
             user_agent: None,
         }
     }
 
-    /// Override both SMS.RU endpoint URLs (`sms/send` and `sms/status`) at once.
+    /// Override all SMS.RU endpoint URLs (`sms/send`, `sms/cost`, and `sms/status`) at once.
     ///
     /// This is kept for backwards compatibility with older code that configured a
     /// single endpoint value.
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         let endpoint = endpoint.into();
         self.send_endpoint = endpoint.clone();
+        self.cost_endpoint = endpoint.clone();
         self.status_endpoint = endpoint;
         self
     }
@@ -166,6 +170,12 @@ impl SmsRuClientBuilder {
     /// Override the SMS.RU endpoint URL for `sms/send`.
     pub fn send_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.send_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `sms/cost`.
+    pub fn cost_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.cost_endpoint = endpoint.into();
         self
     }
 
@@ -204,6 +214,7 @@ impl SmsRuClientBuilder {
         Ok(SmsRuClient {
             auth: self.auth,
             send_endpoint: self.send_endpoint,
+            cost_endpoint: self.cost_endpoint,
             status_endpoint: self.status_endpoint,
             http: Arc::new(ReqwestTransport { client }),
         })
@@ -216,12 +227,14 @@ impl SmsRuClientBuilder {
 /// This type orchestrates request validation, form encoding, and response parsing.
 /// By default it uses:
 /// - `https://sms.ru/sms/send` for sending messages
+/// - `https://sms.ru/sms/cost` for checking message costs
 /// - `https://sms.ru/sms/status` for checking message status
 ///
-/// Both methods expect JSON responses (`json=1`).
+/// All methods expect JSON responses (`json=1`).
 pub struct SmsRuClient {
     auth: Auth,
     send_endpoint: String,
+    cost_endpoint: String,
     status_endpoint: String,
     http: Arc<dyn HttpTransport>,
 }
@@ -234,6 +247,7 @@ impl SmsRuClient {
         Self {
             auth,
             send_endpoint: DEFAULT_SEND_ENDPOINT.to_owned(),
+            cost_endpoint: DEFAULT_COST_ENDPOINT.to_owned(),
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
             http: Arc::new(ReqwestTransport {
                 client: reqwest::Client::new(),
@@ -257,7 +271,7 @@ impl SmsRuClient {
     /// - [`SmsRuError::HttpStatus`] for non-2xx HTTP responses,
     /// - [`SmsRuError::Api`] when SMS.RU returns a top-level `ERROR`.
     pub async fn send_sms(&self, request: SendSms) -> Result<SendSmsResponse, SmsRuError> {
-        if request_options(&request).json != crate::domain::JsonMode::Json {
+        if send_request_options(&request).json != crate::domain::JsonMode::Json {
             return Err(SmsRuError::UnsupportedResponseFormat(
                 "plain-text responses are not supported; set SendOptions.json = JsonMode::Json",
             ));
@@ -286,6 +300,58 @@ impl SmsRuClient {
         }
 
         let parsed = crate::transport::decode_send_sms_json_response(&request, &response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Check SMS cost before sending through SMS.RU.
+    ///
+    /// Constraints:
+    /// - The request must have `CheckCostOptions.json = JsonMode::Json` (plain-text responses are
+    ///   currently not supported).
+    ///
+    /// Errors:
+    /// - Returns [`SmsRuError::Validation`] for invalid domain values,
+    /// - [`SmsRuError::HttpStatus`] for non-2xx HTTP responses,
+    /// - [`SmsRuError::Api`] when SMS.RU returns a top-level `ERROR`.
+    pub async fn check_cost(&self, request: CheckCost) -> Result<CheckCostResponse, SmsRuError> {
+        if cost_request_options(&request).json != crate::domain::JsonMode::Json {
+            return Err(SmsRuError::UnsupportedResponseFormat(
+                "plain-text responses are not supported; set CheckCostOptions.json = JsonMode::Json",
+            ));
+        }
+
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_check_cost_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.cost_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_check_cost_json_response(&request, &response.body)
             .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
 
         if parsed.status != Status::Ok {
@@ -344,10 +410,17 @@ impl SmsRuClient {
     }
 }
 
-fn request_options(request: &SendSms) -> &SendOptions {
+fn send_request_options(request: &SendSms) -> &SendOptions {
     match request {
         SendSms::ToMany(to_many) => to_many.options(),
         SendSms::PerRecipient(per_recipient) => per_recipient.options(),
+    }
+}
+
+fn cost_request_options(request: &CheckCost) -> &CheckCostOptions {
+    match request {
+        CheckCost::ToMany(to_many) => to_many.options(),
+        CheckCost::PerRecipient(per_recipient) => per_recipient.options(),
     }
 }
 
@@ -356,7 +429,8 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::domain::{
-        CheckStatus, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsId, StatusCode,
+        CheckCost, CheckCostOptions, CheckStatus, MessageText, RawPhoneNumber, SendOptions,
+        SendSms, SmsId, StatusCode,
     };
 
     use super::*;
@@ -421,6 +495,7 @@ mod tests {
         SmsRuClient {
             auth,
             send_endpoint: "https://example.invalid/sms/send".to_owned(),
+            cost_endpoint: "https://example.invalid/sms/cost".to_owned(),
             status_endpoint: "https://example.invalid/sms/status".to_owned(),
             http: Arc::new(transport),
         }
@@ -616,6 +691,124 @@ mod tests {
         assert!(matches!(err, SmsRuError::Parse(_)));
     }
 
+    #[tokio::test]
+    async fn check_cost_uses_cost_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "total_cost": 0.50,
+          "total_sms": 1,
+          "sms": {
+            "79251234567": {
+              "status": "OK",
+              "status_code": 100,
+              "cost": 0.50,
+              "sms": 1
+            }
+          }
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let phone = RawPhoneNumber::new("+79251234567").unwrap();
+        let request = CheckCost::to_many(
+            vec![phone.clone()],
+            MessageText::new("hello").unwrap(),
+            CheckCostOptions::default(),
+        )
+        .unwrap();
+
+        let response = client.check_cost(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.total_cost.as_deref(), Some("0.50"));
+        assert_eq!(response.total_sms, Some(1));
+        assert_eq!(
+            response.sms.get(&phone).and_then(|it| it.cost.as_deref()),
+            Some("0.50")
+        );
+
+        let (url, params) = transport.last_request();
+        assert_eq!(url.as_deref(), Some("https://example.invalid/sms/cost"));
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "to", "+79251234567");
+        assert_param(&params, "msg", "hello");
+    }
+
+    #[tokio::test]
+    async fn check_cost_maps_top_level_error_to_api_error() {
+        let json = r#"
+        {
+          "status": "ERROR",
+          "status_code": 200,
+          "status_text": "Invalid api_id"
+        }
+        "#;
+
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("bad_key").unwrap(), transport);
+        let request = CheckCost::to_many(
+            vec![RawPhoneNumber::new("79251234567").unwrap()],
+            MessageText::new("hello").unwrap(),
+            CheckCostOptions::default(),
+        )
+        .unwrap();
+
+        let err = client.check_cost(request).await.unwrap_err();
+        match err {
+            SmsRuError::Api {
+                status_code,
+                status_text,
+            } => {
+                assert_eq!(status_code.as_i32(), 200);
+                assert_eq!(status_text.as_deref(), Some("Invalid api_id"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_cost_maps_non_success_http_status() {
+        let transport = FakeTransport::new(503, "oops");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+        let request = CheckCost::to_many(
+            vec![RawPhoneNumber::new("79251234567").unwrap()],
+            MessageText::new("hello").unwrap(),
+            CheckCostOptions::default(),
+        )
+        .unwrap();
+
+        let err = client.check_cost(request).await.unwrap_err();
+        assert!(matches!(
+            err,
+            SmsRuError::HttpStatus {
+                status: 503,
+                body: Some(_)
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn check_cost_rejects_plain_text_mode() {
+        let transport = FakeTransport::new(200, "{}");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+
+        let request = CheckCost::to_many(
+            vec![RawPhoneNumber::new("79251234567").unwrap()],
+            MessageText::new("hello").unwrap(),
+            CheckCostOptions {
+                json: crate::domain::JsonMode::Plain,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = client.check_cost(request).await.unwrap_err();
+        assert!(matches!(err, SmsRuError::UnsupportedResponseFormat(_)));
+    }
+
     #[test]
     fn auth_constructors_validate_inputs() {
         assert!(Auth::api_id("   ").is_err());
@@ -710,14 +903,17 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(client.send_endpoint, "https://example.invalid/all");
+        assert_eq!(client.cost_endpoint, "https://example.invalid/all");
         assert_eq!(client.status_endpoint, "https://example.invalid/all");
 
         let client = SmsRuClient::builder(Auth::api_id("key").unwrap())
             .send_endpoint("https://example.invalid/sms/send")
+            .cost_endpoint("https://example.invalid/sms/cost")
             .status_endpoint("https://example.invalid/sms/status")
             .build()
             .unwrap();
         assert_eq!(client.send_endpoint, "https://example.invalid/sms/send");
+        assert_eq!(client.cost_endpoint, "https://example.invalid/sms/cost");
         assert_eq!(client.status_endpoint, "https://example.invalid/sms/status");
     }
 }
