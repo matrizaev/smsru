@@ -3,7 +3,7 @@ use std::net::IpAddr;
 
 use crate::domain::validation::ValidationError;
 use crate::domain::value::{
-    MessageText, PartnerId, RawPhoneNumber, SenderId, SmsId, TtlMinutes, UnixTimestamp,
+    CallCheckId, MessageText, PartnerId, RawPhoneNumber, SenderId, SmsId, TtlMinutes, UnixTimestamp,
 };
 
 /// SMS.RU "send SMS" API limit: maximum number of recipients per request.
@@ -61,6 +61,20 @@ pub struct CheckCostOptions {
     pub from: Option<SenderId>,
     /// Transliterate message (`translit=1`).
     pub translit: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+/// Optional parameters for the "start call authentication" request.
+pub struct StartCallAuthOptions {
+    /// Response format requested from SMS.RU (defaults to JSON).
+    pub json: JsonMode,
+}
+
+#[derive(Debug, Clone, Default)]
+/// Optional parameters for the "check call authentication status" request.
+pub struct CheckCallAuthStatusOptions {
+    /// Response format requested from SMS.RU (defaults to JSON).
+    pub json: JsonMode,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +137,20 @@ pub struct CostPerRecipient {
 /// Use [`CheckStatus::new`] for one or many ids or [`CheckStatus::one`] as a convenience.
 pub struct CheckStatus {
     sms_ids: Vec<SmsId>,
+}
+
+#[derive(Debug, Clone)]
+/// A validated "start call authentication" request.
+pub struct StartCallAuth {
+    phone: RawPhoneNumber,
+    options: StartCallAuthOptions,
+}
+
+#[derive(Debug, Clone)]
+/// A validated "check call authentication status" request.
+pub struct CheckCallAuthStatus {
+    check_id: CallCheckId,
+    options: CheckCallAuthStatusOptions,
 }
 
 impl SendSms {
@@ -320,6 +348,40 @@ impl CheckStatus {
     /// Message ids to query.
     pub fn sms_ids(&self) -> &[SmsId] {
         &self.sms_ids
+    }
+}
+
+impl StartCallAuth {
+    /// Create a "start call authentication" request.
+    pub fn new(phone: RawPhoneNumber, options: StartCallAuthOptions) -> Self {
+        Self { phone, options }
+    }
+
+    /// Phone number expected to place the confirmation call.
+    pub fn phone(&self) -> &RawPhoneNumber {
+        &self.phone
+    }
+
+    /// Request options.
+    pub fn options(&self) -> &StartCallAuthOptions {
+        &self.options
+    }
+}
+
+impl CheckCallAuthStatus {
+    /// Create a "check call authentication status" request.
+    pub fn new(check_id: CallCheckId, options: CheckCallAuthStatusOptions) -> Self {
+        Self { check_id, options }
+    }
+
+    /// Check id returned by `callcheck/add`.
+    pub fn check_id(&self) -> &CallCheckId {
+        &self.check_id
+    }
+
+    /// Request options.
+    pub fn options(&self) -> &CheckCallAuthStatusOptions {
+        &self.options
     }
 }
 
@@ -557,5 +619,22 @@ mod tests {
         ];
         let request = CheckStatus::new(ids.clone()).unwrap();
         assert_eq!(request.sms_ids(), ids.as_slice());
+    }
+
+    #[test]
+    fn start_call_auth_exposes_fields() {
+        let phone = RawPhoneNumber::new("79251234567").unwrap();
+        let request = StartCallAuth::new(phone.clone(), StartCallAuthOptions::default());
+        assert_eq!(request.phone(), &phone);
+        assert_eq!(request.options().json, JsonMode::Json);
+    }
+
+    #[test]
+    fn check_call_auth_status_exposes_fields() {
+        let check_id = CallCheckId::new("201737-542").unwrap();
+        let request =
+            CheckCallAuthStatus::new(check_id.clone(), CheckCallAuthStatusOptions::default());
+        assert_eq!(request.check_id(), &check_id);
+        assert_eq!(request.options().json, JsonMode::Json);
     }
 }

@@ -1,27 +1,34 @@
 # smsru crate – Specification
 
-This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for selected SMS.RU HTTP API methods (`sms/send`, `sms/cost`, and `sms/status`).
+This document specifies the intended public API and behavior of the `smsru` Rust library: a typed client for selected SMS.RU HTTP API methods (`sms/send`, `sms/cost`, `sms/status`, `callcheck/add`, and `callcheck/status`).
 
 ## Goals
 
 - Provide a safe, typed Rust interface for sending SMS via `https://sms.ru/sms/send`.
 - Provide a safe, typed Rust interface for checking message cost via `https://sms.ru/sms/cost`.
 - Provide a safe, typed Rust interface for checking message delivery status via `https://sms.ru/sms/status`.
+- Provide a safe, typed Rust interface for starting phone-call authentication via `https://sms.ru/callcheck/add`.
+- Provide a safe, typed Rust interface for checking phone-call authentication status via `https://sms.ru/callcheck/status`.
 - Default to JSON responses (`json=1`) and parse them into structured types.
 - Surface SMS.RU status codes and errors in a predictable way.
 - Keep request construction explicit (no hidden defaults besides `json=1`).
 
 ## Non-goals (initial scope)
 
-- Implement all SMS.RU API methods (only `sms/send`, `sms/cost`, and `sms/status` are in scope).
+- Implement all SMS.RU API methods (only `sms/send`, `sms/cost`, `sms/status`, `callcheck/add`, and `callcheck/status` are in scope).
 - Implement CAPTCHA/anti-fraud flows (the documentation recommends CAPTCHA for end-user forms; this crate only performs server-to-server API calls).
+- Implement webhook receiver infrastructure (users can consume webhook callbacks in their own services).
 
 ## API endpoints
 
 - **Send SMS**: `https://sms.ru/sms/send`
 - **Check message cost**: `https://sms.ru/sms/cost`
 - **Check message status**: `https://sms.ru/sms/status`
-- **HTTP method**: `POST` (documentation returns code `210` if `GET` is used)
+- **Start call-based authentication**: `https://sms.ru/callcheck/add`
+- **Check call-based authentication status**: `https://sms.ru/callcheck/status`
+- **HTTP method**:
+  - `sms/send`, `sms/cost`, `sms/status`: `POST` (documentation returns code `210` if `GET` is used)
+  - `callcheck/add`, `callcheck/status`: SMS.RU documentation shows URL-query examples and POST usage; this crate uses form-encoded `POST` for consistency
 - **Content-Type**: `application/x-www-form-urlencoded`
 - **Encoding**: parameters are UTF-8 (`212` indicates wrong encoding)
 
@@ -155,6 +162,59 @@ Constraints:
 - The list length must be `<= 100`.
 
 `SmsId` is modeled as an opaque validated newtype (non-empty after trimming). The crate does not enforce a specific SMS.RU id format beyond non-empty validation.
+
+## Request: “start call authentication” (`callcheck/add`)
+
+Use this method to start "confirm user by phone call" flow. You provide a user phone number; SMS.RU returns a destination number to call. The user has 5 minutes to place that call.
+Normative details in this section are based on the attached SMS.RU documentation export (`Авторизовать пользователя по звонку с его номера.pdf`, updated 16 June 2025).
+
+### Required parameters
+
+- `phone` (required): user phone number that must be confirmed (the number from which SMS.RU expects an incoming call).
+
+### Optional parameters
+
+- `json=1` (recommended): request JSON response. The library always sends this and rejects non-JSON mode.
+
+### Library request model
+
+The crate should expose a dedicated request type:
+
+- `StartCallAuth::new(RawPhoneNumber, StartCallAuthOptions)`
+
+`StartCallAuthOptions` includes:
+
+- `json` (JSON-only in the client).
+
+Constraints:
+
+- `phone` must be non-empty after trimming (validated by `RawPhoneNumber`).
+
+## Request: “check call authentication status” (`callcheck/status`)
+
+SMS.RU recommends webhook delivery of check results for real-time updates. This method is for explicit polling when needed.
+
+### Required parameters
+
+- `check_id` (required): call-auth identifier received from `callcheck/add`.
+
+### Optional parameters
+
+- `json=1` (recommended): request JSON response. The library always sends this and rejects non-JSON mode.
+
+### Library request model
+
+The crate should expose a dedicated request type:
+
+- `CheckCallAuthStatus::new(CallCheckId, CheckCallAuthStatusOptions)`
+
+`CheckCallAuthStatusOptions` includes:
+
+- `json` (JSON-only in the client).
+
+Constraints:
+
+- `check_id` must be non-empty after trimming.
 
 ## Response: “send SMS”
 
@@ -291,9 +351,86 @@ Library behavior:
 
 - The library should default to JSON and does not support non-JSON parsing in the client; status-check requests are JSON-only.
 
+## Response: “start call authentication” (`callcheck/add`)
+
+### JSON response (`json=1`)
+
+The API returns JSON with at least:
+
+- `status`: `"OK"` or `"ERROR"`
+- `status_code`: numeric code for the overall request
+- `status_text`: optional textual description
+- `check_id`: identifier used for follow-up status checks
+- `call_phone`: phone number the user must call, plain numeric representation
+- `call_phone_pretty`: same destination number in human-readable format
+- `call_phone_html`: clickable `callto:` HTML snippet
+
+Schema/compatibility requirements:
+
+- Treat `status_text` as optional.
+- Optional fields must use `#[serde(default)]` (or equivalent) to avoid hard failures when fields are missing.
+- Response parsing must allow unknown fields (do not use `#[serde(deny_unknown_fields)]`), to remain forward-compatible if SMS.RU adds fields later.
+
+Library behavior:
+
+- If top-level `status != "OK"`, return `SmsRuError::Api { status_code, status_text }`.
+- If top-level `status == "OK"`, return `StartCallAuthResponse`.
+
+### Non-JSON response (legacy)
+
+When `json` is not set, the method returns plain text where:
+
+- First line: request status code (for example `100`)
+- Second line: `check_id`
+- Third line: `call_phone`
+- Fourth line: `call_phone_pretty`
+
+Library behavior:
+
+- The library should default to JSON and does not support non-JSON parsing in the client; call-auth start requests are JSON-only.
+
+## Response: “check call authentication status” (`callcheck/status`)
+
+### JSON response (`json=1`)
+
+The API returns JSON with at least:
+
+- `status`: `"OK"` or `"ERROR"`
+- `status_code`: numeric code for the overall request
+- `status_text`: optional textual description
+- `check_status`: call-auth status code (`400`, `401`, `402` in documented examples)
+- `check_status_text`: textual description of the call-auth status
+
+Schema/compatibility requirements:
+
+- Treat `status_text` and `check_status_text` as optional.
+- Optional fields must use `#[serde(default)]` (or equivalent) to avoid hard failures when fields are missing.
+- Response parsing must allow unknown fields (do not use `#[serde(deny_unknown_fields)]`), to remain forward-compatible if SMS.RU adds fields later.
+
+Representation requirements:
+
+- `check_status` must be modeled as a dedicated newtype (`CallCheckStatusCode` wrapping `StatusCode` or `i32`) while preserving unknown values.
+- Transport parsing should accept both numeric and numeric-string representations for `check_status` (documentation example shows a string).
+
+Library behavior:
+
+- If top-level `status != "OK"`, return `SmsRuError::Api { status_code, status_text }`.
+- If top-level `status == "OK"`, return `CheckCallAuthStatusResponse` and keep `check_status` in the payload even when not confirmed (`400`, `402`, or unknown future values).
+
+### Non-JSON response (legacy)
+
+When `json` is not set, the method returns plain text where:
+
+- First line: request status code (for example `100`)
+- Second line: call-auth status code (`400`, `401`, `402`)
+
+Library behavior:
+
+- The library should default to JSON and does not support non-JSON parsing in the client; call-auth status requests are JSON-only.
+
 ## Status codes
 
-The API uses numeric codes for request-level results and per-message delivery/error states (for `sms/send`, `sms/cost`, and `sms/status`). The crate should:
+The API uses numeric codes for request-level results and method-specific states (for `sms/send`, `sms/cost`, `sms/status`, `callcheck/add`, and `callcheck/status`). The crate should:
 
 - Provide a `StatusCode` newtype wrapping an integer (recommend `i32`).
 - Preserve unknown numeric codes (forward compatibility).
@@ -333,7 +470,7 @@ pub enum KnownStatusCode {
 
 - `200`: Invalid `api_id`
 - `201`: Insufficient funds
-- `202`: Invalid recipient phone number or no route
+- `202`: Invalid phone number (`sms/send`, `sms/cost`, and `callcheck/add` contexts) or no route
 - `203`: Empty message text
 - `204`: Operator not enabled for this sender (or fallback/default sender). Create/enable in “Отправители”.
 - `205`: Message too long (more than 8 SMS parts)
@@ -374,6 +511,14 @@ pub enum KnownStatusCode {
 - `901`: Callback URL invalid (must start with `http://`)
 - `902`: Callback handler not found (may have been deleted)
 
+### Call-auth check status codes (`callcheck/status`)
+
+These values come from the "authenticate by phone call" method documentation and are returned in `check_status` when top-level request status is OK:
+
+- `400`: Number is not confirmed yet (no call from the specified user number has been received yet).
+- `401`: Number confirmed (authentication passed).
+- `402`: Verification window expired or `check_id` is invalid.
+
 ## Rust public API (proposed)
 
 This section describes the intended shape of the library API. Exact naming may evolve, but compatibility should be preserved once released.
@@ -385,11 +530,15 @@ This section describes the intended shape of the library API. Exact naming may e
 - `SmsRuClient::send_sms(request) -> Result<SendSmsResponse, SmsRuError>`
 - `SmsRuClient::check_cost(request) -> Result<CheckCostResponse, SmsRuError>`
 - `SmsRuClient::check_status(request) -> Result<CheckStatusResponse, SmsRuError>`
+- `SmsRuClient::start_call_auth(request) -> Result<StartCallAuthResponse, SmsRuError>`
+- `SmsRuClient::check_call_auth_status(request) -> Result<CheckCallAuthStatusResponse, SmsRuError>`
 - `SmsRuClient::builder(auth)` provides endpoint/timeout/user-agent customization without exposing `reqwest`.
   - `SmsRuClientBuilder::endpoint(url)` sets all method endpoints.
   - `SmsRuClientBuilder::send_endpoint(url)` sets the `sms/send` endpoint only.
   - `SmsRuClientBuilder::cost_endpoint(url)` sets the `sms/cost` endpoint only.
   - `SmsRuClientBuilder::status_endpoint(url)` sets the `sms/status` endpoint only.
+  - `SmsRuClientBuilder::callcheck_add_endpoint(url)` sets the `callcheck/add` endpoint only.
+  - `SmsRuClientBuilder::callcheck_status_endpoint(url)` sets the `callcheck/status` endpoint only.
 
 HTTP backend policy:
 
@@ -411,6 +560,16 @@ HTTP backend policy:
 - `CheckStatus` request model:
   - `sms_ids: Vec<SmsId>`
   - JSON-only request mode
+- `CallCheckId`:
+  - opaque validated identifier from `callcheck/add` (non-empty after trimming)
+- `CallCheckStatusCode`:
+  - call-auth state code from `callcheck/status` (`400`, `401`, `402`, and unknown future values)
+- `StartCallAuth` request model:
+  - `phone: RawPhoneNumber`
+  - options: `json`
+- `CheckCallAuthStatus` request model:
+  - `check_id: CallCheckId`
+  - options: `json`
 - `SendSmsResponse`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
@@ -430,6 +589,20 @@ HTTP backend policy:
   - `total_cost`: `Option<String>`
   - `total_sms`: `Option<u32>`
   - `sms`: `BTreeMap<RawPhoneNumber, SmsCostResult>`
+- `StartCallAuthResponse`:
+  - `status`: `Ok`/`Error`
+  - `status_code`: `StatusCode`
+  - `status_text`: `Option<String>`
+  - `check_id`: `CallCheckId`
+  - `call_phone`: `RawPhoneNumber`
+  - `call_phone_pretty`: `Option<String>`
+  - `call_phone_html`: `Option<String>`
+- `CheckCallAuthStatusResponse`:
+  - `status`: `Ok`/`Error`
+  - `status_code`: `StatusCode`
+  - `status_text`: `Option<String>`
+  - `check_status`: `CallCheckStatusCode`
+  - `check_status_text`: `Option<String>`
 - `SmsResult`:
   - `status`: `Ok`/`Error`
   - `status_code`: `StatusCode`
@@ -458,7 +631,7 @@ HTTP backend policy:
 - `SmsRuError::UnsupportedResponseFormat` (non-JSON response requested for methods that this crate supports only in JSON mode)
 - `SmsRuError::Validation` (failed construction / invalid inputs)
 
-Per-recipient (`sms/send` and `sms/cost`) and per-id (`sms/status`) errors should not automatically map to `SmsRuError::Api` when the top-level response is OK.
+Per-recipient (`sms/send` and `sms/cost`), per-id (`sms/status`), and call-auth state (`callcheck/status` with `check_status` values like `400`/`402`) outcomes should not automatically map to `SmsRuError::Api` when the top-level response is OK.
 
 ## Implementation notes (non-normative)
 
@@ -559,6 +732,37 @@ for (sms_id, result) in resp.sms {
         result.status, result.status_code, result.cost
     );
 }
+# Ok(())
+# }
+```
+
+### Start call authentication and poll status
+
+```rust,no_run
+use smsru::{
+    Auth, CheckCallAuthStatus, CheckCallAuthStatusOptions, RawPhoneNumber, SmsRuClient,
+    StartCallAuth, StartCallAuthOptions,
+};
+
+# async fn run() -> Result<(), smsru::SmsRuError> {
+let client = SmsRuClient::new(Auth::api_id("...")?);
+
+let start = StartCallAuth::new(
+    RawPhoneNumber::new("79255070602")?,
+    StartCallAuthOptions::default(),
+)?;
+let started = client.start_call_auth(start).await?;
+println!("check_id={}, call_phone={}", started.check_id, started.call_phone);
+
+let poll = CheckCallAuthStatus::new(
+    started.check_id.clone(),
+    CheckCallAuthStatusOptions::default(),
+)?;
+let status = client.check_call_auth_status(poll).await?;
+println!(
+    "request_status={:?} check_status={:?} text={:?}",
+    status.status_code, status.check_status, status.check_status_text
+);
 # Ok(())
 # }
 ```
