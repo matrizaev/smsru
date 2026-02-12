@@ -7,13 +7,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::domain::{
-    ApiId, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus, CheckStatusResponse, Login,
-    Password, SendOptions, SendSms, SendSmsResponse, Status, StatusCode, ValidationError,
+    ApiId, CheckCallAuthStatus, CheckCallAuthStatusResponse, CheckCost, CheckCostOptions,
+    CheckCostResponse, CheckStatus, CheckStatusResponse, Login, Password, SendOptions, SendSms,
+    SendSmsResponse, StartCallAuth, StartCallAuthResponse, Status, StatusCode, ValidationError,
 };
 
 const DEFAULT_SEND_ENDPOINT: &str = "https://sms.ru/sms/send";
 const DEFAULT_COST_ENDPOINT: &str = "https://sms.ru/sms/cost";
 const DEFAULT_STATUS_ENDPOINT: &str = "https://sms.ru/sms/status";
+const DEFAULT_CALLCHECK_ADD_ENDPOINT: &str = "https://sms.ru/callcheck/add";
+const DEFAULT_CALLCHECK_STATUS_ENDPOINT: &str = "https://sms.ru/callcheck/status";
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -138,6 +141,8 @@ pub struct SmsRuClientBuilder {
     send_endpoint: String,
     cost_endpoint: String,
     status_endpoint: String,
+    callcheck_add_endpoint: String,
+    callcheck_status_endpoint: String,
     timeout: Option<Duration>,
     user_agent: Option<String>,
 }
@@ -150,6 +155,8 @@ impl SmsRuClientBuilder {
             send_endpoint: DEFAULT_SEND_ENDPOINT.to_owned(),
             cost_endpoint: DEFAULT_COST_ENDPOINT.to_owned(),
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
+            callcheck_add_endpoint: DEFAULT_CALLCHECK_ADD_ENDPOINT.to_owned(),
+            callcheck_status_endpoint: DEFAULT_CALLCHECK_STATUS_ENDPOINT.to_owned(),
             timeout: None,
             user_agent: None,
         }
@@ -164,6 +171,8 @@ impl SmsRuClientBuilder {
         self.send_endpoint = endpoint.clone();
         self.cost_endpoint = endpoint.clone();
         self.status_endpoint = endpoint;
+        self.callcheck_add_endpoint = self.status_endpoint.clone();
+        self.callcheck_status_endpoint = self.status_endpoint.clone();
         self
     }
 
@@ -182,6 +191,18 @@ impl SmsRuClientBuilder {
     /// Override the SMS.RU endpoint URL for `sms/status`.
     pub fn status_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.status_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `callcheck/add`.
+    pub fn callcheck_add_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.callcheck_add_endpoint = endpoint.into();
+        self
+    }
+
+    /// Override the SMS.RU endpoint URL for `callcheck/status`.
+    pub fn callcheck_status_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.callcheck_status_endpoint = endpoint.into();
         self
     }
 
@@ -216,6 +237,8 @@ impl SmsRuClientBuilder {
             send_endpoint: self.send_endpoint,
             cost_endpoint: self.cost_endpoint,
             status_endpoint: self.status_endpoint,
+            callcheck_add_endpoint: self.callcheck_add_endpoint,
+            callcheck_status_endpoint: self.callcheck_status_endpoint,
             http: Arc::new(ReqwestTransport { client }),
         })
     }
@@ -229,6 +252,8 @@ impl SmsRuClientBuilder {
 /// - `https://sms.ru/sms/send` for sending messages
 /// - `https://sms.ru/sms/cost` for checking message costs
 /// - `https://sms.ru/sms/status` for checking message status
+/// - `https://sms.ru/callcheck/add` for starting call authentication
+/// - `https://sms.ru/callcheck/status` for checking call authentication status
 ///
 /// All methods expect JSON responses (`json=1`).
 pub struct SmsRuClient {
@@ -236,6 +261,8 @@ pub struct SmsRuClient {
     send_endpoint: String,
     cost_endpoint: String,
     status_endpoint: String,
+    callcheck_add_endpoint: String,
+    callcheck_status_endpoint: String,
     http: Arc<dyn HttpTransport>,
 }
 
@@ -249,6 +276,8 @@ impl SmsRuClient {
             send_endpoint: DEFAULT_SEND_ENDPOINT.to_owned(),
             cost_endpoint: DEFAULT_COST_ENDPOINT.to_owned(),
             status_endpoint: DEFAULT_STATUS_ENDPOINT.to_owned(),
+            callcheck_add_endpoint: DEFAULT_CALLCHECK_ADD_ENDPOINT.to_owned(),
+            callcheck_status_endpoint: DEFAULT_CALLCHECK_STATUS_ENDPOINT.to_owned(),
             http: Arc::new(ReqwestTransport {
                 client: reqwest::Client::new(),
             }),
@@ -408,6 +437,108 @@ impl SmsRuClient {
 
         Ok(parsed)
     }
+
+    /// Start call-based phone authentication through SMS.RU.
+    ///
+    /// Constraints:
+    /// - The request must have `StartCallAuthOptions.json = JsonMode::Json` (plain-text responses
+    ///   are currently not supported).
+    pub async fn start_call_auth(
+        &self,
+        request: StartCallAuth,
+    ) -> Result<StartCallAuthResponse, SmsRuError> {
+        if request.options().json != crate::domain::JsonMode::Json {
+            return Err(SmsRuError::UnsupportedResponseFormat(
+                "plain-text responses are not supported; set StartCallAuthOptions.json = JsonMode::Json",
+            ));
+        }
+
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_start_call_auth_form(&request));
+
+        let response = self
+            .http
+            .post_form(&self.callcheck_add_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_start_call_auth_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
+
+    /// Check call-based phone authentication status through SMS.RU.
+    ///
+    /// Constraints:
+    /// - The request must have `CheckCallAuthStatusOptions.json = JsonMode::Json` (plain-text
+    ///   responses are currently not supported).
+    pub async fn check_call_auth_status(
+        &self,
+        request: CheckCallAuthStatus,
+    ) -> Result<CheckCallAuthStatusResponse, SmsRuError> {
+        if request.options().json != crate::domain::JsonMode::Json {
+            return Err(SmsRuError::UnsupportedResponseFormat(
+                "plain-text responses are not supported; set CheckCallAuthStatusOptions.json = JsonMode::Json",
+            ));
+        }
+
+        let mut params = Vec::<(String, String)>::new();
+        self.auth.push_form_params(&mut params);
+        params.extend(crate::transport::encode_check_call_auth_status_form(
+            &request,
+        ));
+
+        let response = self
+            .http
+            .post_form(&self.callcheck_status_endpoint, params)
+            .await
+            .map_err(SmsRuError::Transport)?;
+
+        if !(200..=299).contains(&response.status) {
+            let body = if response.body.trim().is_empty() {
+                None
+            } else {
+                Some(response.body)
+            };
+            return Err(SmsRuError::HttpStatus {
+                status: response.status,
+                body,
+            });
+        }
+
+        let parsed = crate::transport::decode_check_call_auth_status_json_response(&response.body)
+            .map_err(|err| SmsRuError::Parse(Box::new(err)))?;
+
+        if parsed.status != Status::Ok {
+            return Err(SmsRuError::Api {
+                status_code: parsed.status_code,
+                status_text: parsed.status_text,
+            });
+        }
+
+        Ok(parsed)
+    }
 }
 
 fn send_request_options(request: &SendSms) -> &SendOptions {
@@ -429,8 +560,9 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::domain::{
-        CheckCost, CheckCostOptions, CheckStatus, MessageText, RawPhoneNumber, SendOptions,
-        SendSms, SmsId, StatusCode,
+        CallCheckId, CheckCallAuthStatus, CheckCallAuthStatusOptions, CheckCost, CheckCostOptions,
+        CheckStatus, MessageText, RawPhoneNumber, SendOptions, SendSms, SmsId, StartCallAuth,
+        StartCallAuthOptions, StatusCode,
     };
 
     use super::*;
@@ -497,6 +629,8 @@ mod tests {
             send_endpoint: "https://example.invalid/sms/send".to_owned(),
             cost_endpoint: "https://example.invalid/sms/cost".to_owned(),
             status_endpoint: "https://example.invalid/sms/status".to_owned(),
+            callcheck_add_endpoint: "https://example.invalid/callcheck/add".to_owned(),
+            callcheck_status_endpoint: "https://example.invalid/callcheck/status".to_owned(),
             http: Arc::new(transport),
         }
     }
@@ -896,6 +1030,107 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn start_call_auth_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "check_id": "201737-542",
+          "call_phone": "78005008275"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request = StartCallAuth::new(
+            RawPhoneNumber::new("79251234567").unwrap(),
+            StartCallAuthOptions::default(),
+        );
+
+        let response = client.start_call_auth(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(
+            response.check_id.as_ref().map(CallCheckId::as_str),
+            Some("201737-542")
+        );
+        assert_eq!(
+            response.call_phone.as_ref().map(RawPhoneNumber::raw),
+            Some("78005008275")
+        );
+
+        let (url, params) = transport.last_request();
+        assert_eq!(
+            url.as_deref(),
+            Some("https://example.invalid/callcheck/add")
+        );
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "phone", "79251234567");
+    }
+
+    #[tokio::test]
+    async fn start_call_auth_rejects_plain_text_mode() {
+        let transport = FakeTransport::new(200, "{}");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+        let request = StartCallAuth::new(
+            RawPhoneNumber::new("79251234567").unwrap(),
+            StartCallAuthOptions {
+                json: crate::domain::JsonMode::Plain,
+            },
+        );
+
+        let err = client.start_call_auth(request).await.unwrap_err();
+        assert!(matches!(err, SmsRuError::UnsupportedResponseFormat(_)));
+    }
+
+    #[tokio::test]
+    async fn check_call_auth_status_uses_endpoint_and_parses_ok_response() {
+        let json = r#"
+        {
+          "status": "OK",
+          "status_code": 100,
+          "check_status": "401",
+          "check_status_text": "confirmed"
+        }
+        "#;
+        let transport = FakeTransport::new(200, json);
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport.clone());
+        let request = CheckCallAuthStatus::new(
+            CallCheckId::new("201737-542").unwrap(),
+            CheckCallAuthStatusOptions::default(),
+        );
+
+        let response = client.check_call_auth_status(request).await.unwrap();
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.status_code, StatusCode::new(100));
+        assert_eq!(response.check_status.map(|code| code.as_i32()), Some(401));
+
+        let (url, params) = transport.last_request();
+        assert_eq!(
+            url.as_deref(),
+            Some("https://example.invalid/callcheck/status")
+        );
+        assert_param(&params, "api_id", "test_key");
+        assert_param(&params, "json", "1");
+        assert_param(&params, "check_id", "201737-542");
+    }
+
+    #[tokio::test]
+    async fn check_call_auth_status_rejects_plain_text_mode() {
+        let transport = FakeTransport::new(200, "{}");
+        let client = make_client(Auth::api_id("test_key").unwrap(), transport);
+        let request = CheckCallAuthStatus::new(
+            CallCheckId::new("201737-542").unwrap(),
+            CheckCallAuthStatusOptions {
+                json: crate::domain::JsonMode::Plain,
+            },
+        );
+
+        let err = client.check_call_auth_status(request).await.unwrap_err();
+        assert!(matches!(err, SmsRuError::UnsupportedResponseFormat(_)));
+    }
+
     #[test]
     fn builder_endpoint_overrides_are_applied() {
         let client = SmsRuClient::builder(Auth::api_id("key").unwrap())
@@ -905,15 +1140,30 @@ mod tests {
         assert_eq!(client.send_endpoint, "https://example.invalid/all");
         assert_eq!(client.cost_endpoint, "https://example.invalid/all");
         assert_eq!(client.status_endpoint, "https://example.invalid/all");
+        assert_eq!(client.callcheck_add_endpoint, "https://example.invalid/all");
+        assert_eq!(
+            client.callcheck_status_endpoint,
+            "https://example.invalid/all"
+        );
 
         let client = SmsRuClient::builder(Auth::api_id("key").unwrap())
             .send_endpoint("https://example.invalid/sms/send")
             .cost_endpoint("https://example.invalid/sms/cost")
             .status_endpoint("https://example.invalid/sms/status")
+            .callcheck_add_endpoint("https://example.invalid/callcheck/add")
+            .callcheck_status_endpoint("https://example.invalid/callcheck/status")
             .build()
             .unwrap();
         assert_eq!(client.send_endpoint, "https://example.invalid/sms/send");
         assert_eq!(client.cost_endpoint, "https://example.invalid/sms/cost");
         assert_eq!(client.status_endpoint, "https://example.invalid/sms/status");
+        assert_eq!(
+            client.callcheck_add_endpoint,
+            "https://example.invalid/callcheck/add"
+        );
+        assert_eq!(
+            client.callcheck_status_endpoint,
+            "https://example.invalid/callcheck/status"
+        );
     }
 }

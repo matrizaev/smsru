@@ -40,8 +40,11 @@ mod transport;
 
 pub use client::{Auth, SmsRuClient, SmsRuClientBuilder, SmsRuError};
 pub use domain::{
-    ApiId, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus, CheckStatusResponse,
-    JsonMode, KnownStatusCode, Login, MessageText, PartnerId, Password, PhoneNumber,
-    RawPhoneNumber, SendOptions, SendSms, SendSmsResponse, SenderId, SmsCostResult, SmsId,
-    SmsResult, SmsStatusResult, Status, StatusCode, TtlMinutes, UnixTimestamp, ValidationError,
+    ApiId, CallCheckId, CallCheckStatusCode, CheckCallAuthStatus, CheckCallAuthStatusOptions,
+    CheckCallAuthStatusResponse, CheckCost, CheckCostOptions, CheckCostResponse, CheckStatus,
+    CheckStatusResponse, JsonMode, KnownCallCheckStatusCode, KnownStatusCode, Login, MessageText,
+    PartnerId, Password, PhoneNumber, RawPhoneNumber, SendOptions, SendSms, SendSmsResponse,
+    SenderId, SmsCostResult, SmsId, SmsResult, SmsStatusResult, StartCallAuth,
+    StartCallAuthOptions, StartCallAuthResponse, Status, StatusCode, TtlMinutes, UnixTimestamp,
+    ValidationError,
 };

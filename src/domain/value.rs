@@ -183,6 +183,32 @@ impl SmsId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// SMS.RU call-auth check id (`check_id`) returned by `callcheck/add`.
+///
+/// Invariant: non-empty after trimming.
+pub struct CallCheckId(String);
+
+impl CallCheckId {
+    /// Form field name used by SMS.RU (`check_id`).
+    pub const FIELD: &'static str = "check_id";
+
+    /// Create a validated [`CallCheckId`].
+    pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let value = value.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ValidationError::Empty { field: Self::FIELD });
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    /// Borrow the validated check id.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// Unvalidated phone number as sent to SMS.RU (`to`).
 ///
 /// Invariant: non-empty after trimming. This type does not normalize; if you want E.164
@@ -395,6 +421,50 @@ impl StatusCode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Call-auth status code returned by `callcheck/status` in `check_status`.
+///
+/// This value is preserved as-is even when unknown to this crate.
+pub struct CallCheckStatusCode(i32);
+
+impl CallCheckStatusCode {
+    /// Construct a call-check status code from its integer representation.
+    pub fn new(code: i32) -> Self {
+        Self(code)
+    }
+
+    /// Get the integer code as provided by SMS.RU.
+    pub fn as_i32(self) -> i32 {
+        self.0
+    }
+
+    /// Map this code to a known call-check status variant, if one exists.
+    pub fn known_kind(self) -> Option<KnownCallCheckStatusCode> {
+        KnownCallCheckStatusCode::from_code(self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+/// Known `check_status` values for `callcheck/status`.
+pub enum KnownCallCheckStatusCode {
+    NotConfirmedYet,
+    Confirmed,
+    ExpiredOrInvalidCheckId,
+}
+
+impl KnownCallCheckStatusCode {
+    /// Convert a raw integer call-check status code into a known variant.
+    pub fn from_code(code: i32) -> Option<Self> {
+        Some(match code {
+            400 => Self::NotConfirmedYet,
+            401 => Self::Confirmed,
+            402 => Self::ExpiredOrInvalidCheckId,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 /// Known SMS.RU status codes supported by this crate.
 ///
@@ -454,6 +524,9 @@ pub enum KnownStatusCode {
     CountryBlocked,
     CallbackUrlInvalid,
     CallbackHandlerNotFound,
+    CallCheckNotConfirmedYet,
+    CallCheckConfirmed,
+    CallCheckExpiredOrInvalidCheckId,
 }
 
 impl KnownStatusCode {
@@ -514,6 +587,9 @@ impl KnownStatusCode {
             550 => Self::CountryBlocked,
             901 => Self::CallbackUrlInvalid,
             902 => Self::CallbackHandlerNotFound,
+            400 => Self::CallCheckNotConfirmedYet,
+            401 => Self::CallCheckConfirmed,
+            402 => Self::CallCheckExpiredOrInvalidCheckId,
             _ => return None,
         })
     }
@@ -569,6 +645,10 @@ mod tests {
         let sms_id = SmsId::new(" 000000-000001 ").unwrap();
         assert_eq!(sms_id.as_str(), "000000-000001");
         assert!(SmsId::new("  ").is_err());
+
+        let check_id = CallCheckId::new(" 201737-542 ").unwrap();
+        assert_eq!(check_id.as_str(), "201737-542");
+        assert!(CallCheckId::new("  ").is_err());
     }
 
     #[test]
@@ -613,5 +693,23 @@ mod tests {
         assert!(unknown.known().is_none());
         assert!(!unknown.is_retryable());
         assert!(!unknown.is_auth_error());
+    }
+
+    #[test]
+    fn call_check_status_code_known_mapping() {
+        let pending = CallCheckStatusCode::new(400);
+        assert_eq!(
+            pending.known_kind(),
+            Some(KnownCallCheckStatusCode::NotConfirmedYet)
+        );
+
+        let confirmed = CallCheckStatusCode::new(401);
+        assert_eq!(
+            confirmed.known_kind(),
+            Some(KnownCallCheckStatusCode::Confirmed)
+        );
+
+        let unknown = CallCheckStatusCode::new(9999);
+        assert_eq!(unknown.known_kind(), None);
     }
 }

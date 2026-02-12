@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::domain::value::{RawPhoneNumber, SmsId, StatusCode};
+use crate::domain::value::{CallCheckId, CallCheckStatusCode, RawPhoneNumber, SmsId, StatusCode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// Top-level status marker used by SMS.RU responses.
@@ -106,4 +106,44 @@ pub struct SmsCostResult {
     pub cost: Option<String>,
     /// Optional per-recipient SMS segment count.
     pub sms: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from the SMS.RU "start call authentication" API.
+///
+/// When using [`crate::client::SmsRuClient`], API-level failures (`status != OK`) are returned as
+/// [`crate::SmsRuError::Api`] instead of a `StartCallAuthResponse`.
+pub struct StartCallAuthResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Call-check id used for status polling.
+    pub check_id: Option<CallCheckId>,
+    /// Number the user must call to confirm ownership.
+    pub call_phone: Option<RawPhoneNumber>,
+    /// Human-readable call number.
+    pub call_phone_pretty: Option<String>,
+    /// HTML `callto:` link.
+    pub call_phone_html: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed response from the SMS.RU "check call authentication status" API.
+///
+/// When using [`crate::client::SmsRuClient`], API-level failures (`status != OK`) are returned as
+/// [`crate::SmsRuError::Api`] instead of a `CheckCallAuthStatusResponse`.
+pub struct CheckCallAuthStatusResponse {
+    /// Top-level response status.
+    pub status: Status,
+    /// SMS.RU status code (known + unknown preserved).
+    pub status_code: StatusCode,
+    /// Optional status text provided by SMS.RU.
+    pub status_text: Option<String>,
+    /// Call-check status code (`400`/`401`/`402`, unknown preserved).
+    pub check_status: Option<CallCheckStatusCode>,
+    /// Optional call-check status description.
+    pub check_status_text: Option<String>,
 }
